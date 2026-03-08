@@ -1,0 +1,356 @@
+{
+  "groups": [
+    {
+      "name": "Электроника",
+      "items": [
+        {
+          "name": "Телевизор Samsung UE55",
+          "article": "TV-SAM-55",
+          "unit": "шт",
+          "manufacturer": "Samsung",
+          "weight": 15.2
+        },
+        {
+          "name": "Телевизор LG 43NANO",
+          "article": "TV-LG-43",
+          "unit": "шт",
+          "manufacturer": "LG",
+          "weight": 9.5
+        },
+        {
+          "name": "Ноутбук Lenovo IdeaPad 3",
+          "article": "NB-LEN-3",
+          "unit": "шт",
+          "manufacturer": "Lenovo",
+          "weight": 2.1
+        },
+        {
+          "name": "Ноутбук ASUS VivoBook",
+          "article": "NB-ASUS-V",
+          "unit": "шт",
+          "manufacturer": "ASUS",
+          "weight": 1.8
+        },
+        {
+          "name": "Смартфон Apple iPhone 15",
+          "article": "PH-APL-15",
+          "unit": "шт",
+          "manufacturer": "Apple",
+          "weight": 0.17
+        },
+        {
+          "name": "Смартфон Samsung Galaxy S24",
+          "article": "PH-SAM-S24",
+          "unit": "шт",
+          "manufacturer": "Samsung",
+          "weight": 0.19
+        },
+        {
+          "name": "Планшет Apple iPad Air",
+          "article": "TB-APL-AIR",
+          "unit": "шт",
+          "manufacturer": "Apple",
+          "weight": 0.46
+        },
+        {
+          "name": "Наушники Sony WH-1000XM5",
+          "article": "HP-SONY-5",
+          "unit": "шт",
+          "manufacturer": "Sony",
+          "weight": 0.25
+        },
+        {
+          "name": "Колонка JBL Flip 6",
+          "article": "SP-JBL-F6",
+          "unit": "шт",
+          "manufacturer": "JBL",
+          "weight": 0.55
+        },
+        {
+          "name": "Фотоаппарат Canon EOS R50",
+          "article": "CM-CAN-R50",
+          "unit": "шт",
+          "manufacturer": "Canon",
+          "weight": 0.38
+        },
+        {
+          "name": "Монитор Dell 27 S2722QC",
+          "article": "MN-DEL-27",
+          "unit": "шт",
+          "manufacturer": "Dell",
+          "weight": 4.7
+        },
+        {
+          "name": "Клавиатура Logitech MX Keys",
+          "article": "KB-LOG-MX",
+          "unit": "шт",
+          "manufacturer": "Logitech",
+          "weight": 0.81
+        }
+      ]
+    },
+    {
+      "name": "Бытовая техника",
+      "items": [
+        {
+          "name": "Холодильник Bosch KGN39",
+          "article": "FR-BSH-39",
+          "unit": "шт",
+          "manufacturer": "Bosch",
+          "weight": 66.0
+        },
+        {
+          "name": "Стиральная машина LG F2V5HS0W",
+          "article": "WM-LG-F2V",
+          "unit": "шт",
+          "manufacturer": "LG",
+          "weight": 58.0
+        },
+        {
+          "name": "Пылесос Dyson V15",
+          "article": "VC-DYS-V15",
+          "unit": "шт",
+          "manufacturer": "Dyson",
+          "weight": 3.1
+        },
+        {
+          "name": "Микроволновая печь Samsung ME88",
+          "article": "MW-SAM-88",
+          "unit": "шт",
+          "manufacturer": "Samsung",
+          "weight": 12.5
+        },
+        {
+          "name": "Посудомоечная машина Bosch SMS4",
+          "article": "DW-BSH-S4",
+          "unit": "шт",
+          "manufacturer": "Bosch",
+          "weight": 48.0
+        },
+        {
+          "name": "Кондиционер Daikin FTXB25C",
+          "article": "AC-DAI-25",
+          "unit": "шт",
+          "manufacturer": "Daikin",
+          "weight": 8.5
+        },
+        {
+          "name": "Утюг Philips GC4909",
+          "article": "IR-PHL-49",
+          "unit": "шт",
+          "manufacturer": "Philips",
+          "weight": 1.6
+        },
+        {
+          "name": "Чайник Tefal KI270D",
+          "article": "KT-TEF-27",
+          "unit": "шт",
+          "manufacturer": "Tefal",
+          "weight": 1.1
+        }
+      ]
+    },
+    {
+      "name": "Одежда",
+      "items": [
+        {
+          "name": "Куртка мужская Columbia",
+          "article": "CL-COL-JM",
+          "unit": "шт",
+          "manufacturer": "Columbia",
+          "weight": 0.8
+        },
+        {
+          "name": "Куртка женская The North Face",
+          "article": "CL-TNF-JW",
+          "unit": "шт",
+          "manufacturer": "The North Face",
+          "weight": 0.6
+        },
+        {
+          "name": "Джинсы Levi's 501",
+          "article": "CL-LEV-501",
+          "unit": "шт",
+          "manufacturer": "Levi's",
+          "weight": 0.9
+        },
+        {
+          "name": "Футболка Nike Dri-FIT",
+          "article": "CL-NIK-DF",
+          "unit": "шт",
+          "manufacturer": "Nike",
+          "weight": 0.15
+        },
+        {
+          "name": "Кроссовки Adidas Ultraboost",
+          "article": "CL-ADI-UB",
+          "unit": "пара",
+          "manufacturer": "Adidas",
+          "weight": 0.65
+        },
+        {
+          "name": "Платье Zara Midi",
+          "article": "CL-ZAR-MD",
+          "unit": "шт",
+          "manufacturer": "Zara",
+          "weight": 0.3
+        },
+        {
+          "name": "Свитер H&M Knit",
+          "article": "CL-HM-KN",
+          "unit": "шт",
+          "manufacturer": "H&M",
+          "weight": 0.4
+        },
+        {
+          "name": "Пальто мужское Massimo Dutti",
+          "article": "CL-MSD-PM",
+          "unit": "шт",
+          "manufacturer": "Massimo Dutti",
+          "weight": 1.5
+        }
+      ]
+    },
+    {
+      "name": "Продукты питания",
+      "items": [
+        {
+          "name": "Молоко Простоквашино 3.2%",
+          "article": "FD-MLK-32",
+          "unit": "л",
+          "manufacturer": "Простоквашино",
+          "weight": 1.03
+        },
+        {
+          "name": "Хлеб Бородинский",
+          "article": "FD-BRD-BR",
+          "unit": "шт",
+          "manufacturer": "Хлебозавод №22",
+          "weight": 0.4
+        },
+        {
+          "name": "Сыр Голландский 45%",
+          "article": "FD-CHS-GL",
+          "unit": "кг",
+          "manufacturer": "Дмитрогорский МЗ",
+          "weight": 1.0
+        },
+        {
+          "name": "Колбаса Докторская",
+          "article": "FD-SSG-DK",
+          "unit": "кг",
+          "manufacturer": "Микоян",
+          "weight": 1.0
+        },
+        {
+          "name": "Макароны Barilla Spaghetti",
+          "article": "FD-PST-BR",
+          "unit": "уп",
+          "manufacturer": "Barilla",
+          "weight": 0.5
+        },
+        {
+          "name": "Сок Добрый яблочный",
+          "article": "FD-JCE-DB",
+          "unit": "л",
+          "manufacturer": "Добрый",
+          "weight": 1.05
+        },
+        {
+          "name": "Чай Greenfield Earl Grey",
+          "article": "FD-TEA-GF",
+          "unit": "уп",
+          "manufacturer": "Greenfield",
+          "weight": 0.2
+        },
+        {
+          "name": "Кофе Lavazza Qualita Rossa",
+          "article": "FD-COF-LV",
+          "unit": "уп",
+          "manufacturer": "Lavazza",
+          "weight": 0.25
+        }
+      ]
+    },
+    {
+      "name": "Стройматериалы",
+      "items": [
+        {
+          "name": "Краска Dulux белая 10л",
+          "article": "BM-DLX-W10",
+          "unit": "ведро",
+          "manufacturer": "Dulux",
+          "weight": 14.0
+        },
+        {
+          "name": "Ламинат Tarkett Artisan",
+          "article": "BM-TRK-ART",
+          "unit": "м2",
+          "manufacturer": "Tarkett",
+          "weight": 8.5
+        },
+        {
+          "name": "Плитка Kerama Marazzi",
+          "article": "BM-KRM-MR",
+          "unit": "м2",
+          "manufacturer": "Kerama Marazzi",
+          "weight": 18.0
+        },
+        {
+          "name": "Цемент М500 50кг",
+          "article": "BM-CMT-M5",
+          "unit": "мешок",
+          "manufacturer": "Евроцемент",
+          "weight": 50.0
+        },
+        {
+          "name": "Гипсокартон Knauf 12.5мм",
+          "article": "BM-KNF-GK",
+          "unit": "лист",
+          "manufacturer": "Knauf",
+          "weight": 26.0
+        },
+        {
+          "name": "Профиль ПН 28x27",
+          "article": "BM-PRF-PN",
+          "unit": "шт",
+          "manufacturer": "Knauf",
+          "weight": 0.6
+        }
+      ]
+    },
+    {
+      "name": "Канцтовары",
+      "items": [
+        {
+          "name": "Бумага SvetoCopy A4 500л",
+          "article": "OF-PPR-SC",
+          "unit": "уп",
+          "manufacturer": "SvetoCopy",
+          "weight": 2.5
+        },
+        {
+          "name": "Ручка Parker Jotter",
+          "article": "OF-PEN-PJ",
+          "unit": "шт",
+          "manufacturer": "Parker",
+          "weight": 0.02
+        },
+        {
+          "name": "Папка-регистратор Bantex 70мм",
+          "article": "OF-FLD-BT",
+          "unit": "шт",
+          "manufacturer": "Bantex",
+          "weight": 0.5
+        },
+        {
+          "name": "Степлер KW-trio",
+          "article": "OF-STP-KW",
+          "unit": "шт",
+          "manufacturer": "KW-trio",
+          "weight": 0.3
+        }
+      ]
+    }
+  ]
+}

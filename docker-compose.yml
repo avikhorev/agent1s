@@ -1,0 +1,58 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      ODATA_MOCK_URL: http://odata-mock:8080
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Secret123!}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://openrouter.ai/api}
+      ANTHROPIC_AUTH_TOKEN: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ""
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${ANTHROPIC_DEFAULT_HAIKU_MODEL:-stepfun/step-3.5-flash:free}
+    depends_on:
+      odata-mock:
+        condition: service_started
+
+  odata-mock:
+    build:
+      context: ./vendor/coreai_1c_test_server/server
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://odata:odata_secret@odata-postgres:5432/odata_1c
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+    depends_on:
+      odata-seed:
+        condition: service_completed_successfully
+
+  odata-seed:
+    build:
+      context: ./vendor/coreai_1c_test_server/seed
+    environment:
+      DATABASE_URL: postgresql://odata:odata_secret@odata-postgres:5432/odata_1c
+    depends_on:
+      odata-postgres:
+        condition: service_healthy
+
+  odata-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: odata_1c
+      POSTGRES_USER: odata
+      POSTGRES_PASSWORD: odata_secret
+    ports:
+      - "5438:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odata -d odata_1c"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

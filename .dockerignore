@@ -1,0 +1,7 @@
+vendor/
+.git
+.env
+__pycache__
+tests/
+README.md
+pytest.ini

@@ -1,0 +1,9 @@
+.worktrees/
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+playwright-report/
+test-results/
+.DS_Store
+.env

@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: odata_1c
+      POSTGRES_USER: odata
+      POSTGRES_PASSWORD: odata_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odata -d odata_1c"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  seed:
+    build:
+      context: ./seed
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://odata:odata_secret@postgres:5432/odata_1c
+
+  server:
+    build:
+      context: ./server
+    ports:
+      - "8080:8080"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+asyncpg://odata:odata_secret@postgres:5432/odata_1c
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+
+volumes:
+  pgdata:
