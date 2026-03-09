@@ -20,7 +20,7 @@ services:
     build:
       context: ./vendor/coreai_1c_test_server/server
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       DATABASE_URL: postgresql+asyncpg://odata:odata_secret@odata-postgres:5432/odata_1c
       SERVER_HOST: 0.0.0.0
