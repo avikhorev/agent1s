@@ -118,8 +118,6 @@ def sidebar():
 
 # ── Chat page ──────────────────────────────────────────────────────────────────
 def chat_page():
-    sidebar()
-
     # Ensure there's an active chat
     if not st.session_state.active_chat or st.session_state.active_chat not in st.session_state.chats:
         if st.session_state.chats:
@@ -244,20 +242,19 @@ def _load_returns(config: str) -> "pd.DataFrame":
     import pandas as pd
     from odata.client import fetch_entity
     try:
-        payload = fetch_entity(config, "Document_ВозвратТоваровОтКлиента", select="Номенклатура_Key", top=500)
+        payload = fetch_entity(config, "Document_ВозвратТоваровОтКлиента", select="Контрагент_Key,Сумма", top=500)
         records = payload.get("value", [])
     except Exception:
-        return pd.DataFrame(columns=["Номенклатура_Key", "count"])
+        return pd.DataFrame(columns=["Контрагент_Key", "Сумма"])
     if not records:
-        return pd.DataFrame(columns=["Номенклатура_Key", "count"])
-    import pandas as pd
+        return pd.DataFrame(columns=["Контрагент_Key", "Сумма"])
     df = pd.DataFrame(records)
-    return df.groupby("Номенклатура_Key").size().reset_index(name="count")
+    df["Сумма"] = pd.to_numeric(df["Сумма"], errors="coerce").fillna(0)
+    return df.groupby("Контрагент_Key")["Сумма"].sum().reset_index()
 
 
 def analytics_page():
     import pandas as pd
-    sidebar()
     config = st.session_state.config
 
     st.title(f"📈 Аналитика — {CONFIG_OPTIONS[config]}")
@@ -316,13 +313,13 @@ def analytics_page():
 
     # ── Возвраты по товарам (UT only) ─────────────────────────────────────────
     if config == "ut":
-        st.subheader("Возвраты по товарам")
+        st.subheader("Возвраты по контрагентам")
         with st.spinner("Загрузка..."):
             df_ret = _load_returns(config)
         if df_ret.empty:
             st.info("Нет данных о возвратах.")
         else:
-            st.bar_chart(df_ret.set_index("Номенклатура_Key"))
+            st.bar_chart(df_ret.set_index("Контрагент_Key"))
             with st.expander("Данные"):
                 st.dataframe(df_ret, use_container_width=True)
 
@@ -331,6 +328,7 @@ def analytics_page():
 if not st.session_state.authenticated:
     login_page()
 else:
+    sidebar()
     tab_chat, tab_analytics = st.tabs(["💬 Чат", "📈 Аналитика"])
     with tab_chat:
         chat_page()
