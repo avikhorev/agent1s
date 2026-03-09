@@ -4,6 +4,8 @@ import json
 
 from claude_agent_sdk import tool as sdk_tool
 
+MAX_TOP = 50  # Hard cap to prevent stdout buffer overflow in claude subprocess
+
 
 @sdk_tool(
     name="list_configs",
@@ -77,6 +79,8 @@ async def query_entity_tool(args: dict) -> dict:
     loop = asyncio.get_running_loop()
     try:
         from odata.tools import query_entity
+        requested_top = args.get("top")
+        capped_top = min(requested_top, MAX_TOP) if requested_top else MAX_TOP
         result = await loop.run_in_executor(
             None,
             lambda: query_entity(
@@ -85,7 +89,7 @@ async def query_entity_tool(args: dict) -> dict:
                 select=args.get("select"),
                 filter_expr=args.get("filter"),
                 orderby=args.get("orderby"),
-                top=args.get("top"),
+                top=capped_top,
                 skip=args.get("skip"),
                 count_only=args.get("count_only", False),
             )
