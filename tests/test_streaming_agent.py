@@ -299,3 +299,8 @@ def test_stream_agent_events_restricts_tools_to_odata(monkeypatch):
     ]
     assert "Agent" in opts.disallowed_tools
     assert "TaskOutput" in opts.disallowed_tools
+    deny = asyncio.run(opts.can_use_tool("mcp__odata__query_entity", {"config_name": "bp"}, None))
+    assert deny.behavior == "deny"
+    allow = asyncio.run(opts.can_use_tool("mcp__odata__query_entity", {"config_name": "UT"}, None))
+    assert allow.behavior == "allow"
+    assert allow.updated_input["config_name"] == "ut"

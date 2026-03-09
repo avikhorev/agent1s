@@ -8,6 +8,8 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    PermissionResultAllow,
+    PermissionResultDeny,
     ResultMessage,
     TextBlock,
     ToolUseBlock,
@@ -46,6 +48,32 @@ DISALLOWED_TOOLS = [
     "Edit",
     "Write",
 ]
+
+
+def _normalize_config(config_name: str | None) -> str:
+    return (config_name or "").strip().lower()
+
+
+def _build_tool_guard(selected_config: str):
+    selected = _normalize_config(selected_config)
+
+    async def _can_use_tool(tool_name: str, tool_input: dict, _context):
+        if not tool_name.startswith("mcp__odata__"):
+            return PermissionResultDeny(message=f"Tool '{tool_name}' is not allowed")
+
+        if tool_name == "mcp__odata__list_configs":
+            return PermissionResultAllow()
+
+        updated_input = dict(tool_input or {})
+        current = _normalize_config(updated_input.get("config_name", selected))
+        if current != selected:
+            return PermissionResultDeny(
+                message=f"Only config '{selected}' is allowed in this chat (got '{current}')."
+            )
+        updated_input["config_name"] = selected
+        return PermissionResultAllow(updated_input=updated_input)
+
+    return _can_use_tool
 
 
 def _system_prompt(config_name: str) -> str:
@@ -114,6 +142,7 @@ async def _run(question: str, config_name: str) -> dict:
         allowed_tools=ALLOWED_TOOLS,
         disallowed_tools=DISALLOWED_TOOLS,
         mcp_servers={"odata": _get_mcp_server()},
+        can_use_tool=_build_tool_guard(config_name),
         permission_mode="bypassPermissions",
         max_turns=15,
         model=MODEL,
@@ -170,6 +199,7 @@ def stream_agent_events(question: str, config_name: str, timeout: int = 120, can
             allowed_tools=ALLOWED_TOOLS,
             disallowed_tools=DISALLOWED_TOOLS,
             mcp_servers={"odata": _get_mcp_server()},
+            can_use_tool=_build_tool_guard(config_name),
             permission_mode="bypassPermissions",
             max_turns=15,
             model=MODEL,
