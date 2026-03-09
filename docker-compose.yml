@@ -4,11 +4,14 @@ services:
     ports:
       - "8501:8501"
     environment:
-      ODATA_MOCK_URL: http://odata-mock:8080
+      ODATA_MOCK_URL: ${ODATA_MOCK_URL:-http://odata-mock:8080}
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Secret123!}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${ANTHROPIC_DEFAULT_HAIKU_MODEL:-claude-haiku-4-5-20251001}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://openrouter.ai/api}
+      ANTHROPIC_AUTH_TOKEN: ${OPENROUTER_API_KEY}
+      ANTHROPIC_API_KEY: ""
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${ANTHROPIC_DEFAULT_HAIKU_MODEL:-stepfun/step-3.5-flash:free}
     depends_on:
       odata-mock:
         condition: service_started

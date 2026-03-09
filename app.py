@@ -1,6 +1,5 @@
 """1C OData AI Agent — Streamlit chat interface."""
 import os
-import threading
 import time
 import uuid
 
@@ -59,7 +58,7 @@ def login_page():
         with st.form("login"):
             user = st.text_input("Пользователь", value="admin")
             pwd = st.text_input("Пароль", type="password")
-            submitted = st.form_submit_button("Войти", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("Войти", width="stretch", type="primary")
             if submitted:
                 if user == ADMIN_USER and pwd == ADMIN_PASSWORD:
                     st.session_state.authenticated = True
@@ -80,7 +79,7 @@ def sidebar():
         # Config selector
         st.subheader("Конфигурация 1С")
         selected = st.radio(
-            label="",
+            label="Конфигурация",
             options=list(CONFIG_OPTIONS.keys()),
             format_func=lambda k: CONFIG_OPTIONS[k],
             index=list(CONFIG_OPTIONS.keys()).index(st.session_state.config),
@@ -92,7 +91,7 @@ def sidebar():
         st.divider()
 
         # New chat
-        if st.button("➕ Новый чат", use_container_width=True):
+        if st.button("➕ Новый чат", width="stretch"):
             chat_id = str(uuid.uuid4())[:8]
             st.session_state.chats[chat_id] = {"title": "Новый чат", "messages": []}
             st.session_state.active_chat = chat_id
@@ -105,12 +104,12 @@ def sidebar():
                 label = chat["title"]
                 is_active = chat_id == st.session_state.active_chat
                 btn_type = "primary" if is_active else "secondary"
-                if st.button(label, key=f"chat_{chat_id}", use_container_width=True, type=btn_type):
+                if st.button(label, key=f"chat_{chat_id}", width="stretch", type=btn_type):
                     st.session_state.active_chat = chat_id
                     st.rerun()
 
         st.divider()
-        if st.button("🚪 Выйти", use_container_width=True):
+        if st.button("🚪 Выйти", width="stretch"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
@@ -144,7 +143,7 @@ def chat_page():
         cols = st.columns(2)
         for i, q in enumerate(EXAMPLE_QUESTIONS):
             with cols[i % 2]:
-                if st.button(q, key=f"example_{i}", use_container_width=True):
+                if st.button(q, key=f"example_{i}", width="stretch"):
                     _send_message(chat_id, q)
                     st.rerun()
         return
@@ -173,7 +172,7 @@ def chat_page():
 
 
 def _send_message(chat_id: str, question: str):
-    from agent import run_agent
+    from agent import stream_agent
 
     chat = st.session_state.chats[chat_id]
 
@@ -185,14 +184,19 @@ def _send_message(chat_id: str, question: str):
         title = question[:50] + ("…" if len(question) > 50 else "")
         chat["title"] = title
 
-    # Run agent synchronously (Streamlit runs in a thread, asyncio.run() is fine)
-    with st.spinner("Агент анализирует данные..."):
-        result = run_agent(question, st.session_state.config)
+    # Stream response directly into the chat bubble
+    tool_calls: list = []
+    with st.chat_message("assistant"):
+        full_text = st.write_stream(stream_agent(question, st.session_state.config, tool_calls))
+        if tool_calls:
+            with st.expander(f"🔧 Запросов к API: {len(tool_calls)}", expanded=False):
+                for tc in tool_calls:
+                    st.code(f"{tc['tool']}({tc['args']})", language="python")
 
     chat["messages"].append({
         "role": "assistant",
-        "content": result["answer"],
-        "tool_calls": result.get("tool_calls", []),
+        "content": full_text,
+        "tool_calls": tool_calls,
     })
 
 
@@ -276,7 +280,7 @@ def analytics_page():
         )
         st.line_chart(monthly)
         with st.expander("Данные"):
-            st.dataframe(monthly.reset_index(), use_container_width=True)
+            st.dataframe(monthly.reset_index(), width="stretch")
 
     # ── Топ-10 товаров по выручке ─────────────────────────────────────────────
     st.subheader("Топ-10 товаров по выручке")
@@ -293,7 +297,7 @@ def analytics_page():
         )
         st.bar_chart(top10)
         with st.expander("Данные"):
-            st.dataframe(top10.reset_index(), use_container_width=True)
+            st.dataframe(top10.reset_index(), width="stretch")
 
     # ── Продажи по складам ────────────────────────────────────────────────────
     st.subheader("Продажи по складам")
@@ -309,7 +313,7 @@ def analytics_page():
         )
         st.bar_chart(by_wh)
         with st.expander("Данные"):
-            st.dataframe(by_wh.reset_index(), use_container_width=True)
+            st.dataframe(by_wh.reset_index(), width="stretch")
 
     # ── Возвраты по товарам (UT only) ─────────────────────────────────────────
     if config == "ut":
@@ -321,7 +325,7 @@ def analytics_page():
         else:
             st.bar_chart(df_ret.set_index("Контрагент_Key"))
             with st.expander("Данные"):
-                st.dataframe(df_ret, use_container_width=True)
+                st.dataframe(df_ret, width="stretch")
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 """Claude Agent SDK runner for 1C OData queries."""
 import asyncio
 import os
+import queue
+import threading
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -117,17 +119,56 @@ async def _run(question: str, config_name: str) -> dict:
     return {"answer": answer, "tool_calls": tool_calls}
 
 
-def run_agent(question: str, config_name: str, timeout: int = 120) -> dict:
-    """Synchronous wrapper — safe to call from Streamlit."""
-    async def _with_timeout():
-        return await asyncio.wait_for(_run(question, config_name), timeout=timeout)
+def stream_agent(question: str, config_name: str, tool_calls_out: list, timeout: int = 120):
+    """Sync generator yielding text chunks as Claude responds. Populates tool_calls_out as side effect."""
+    q: queue.Queue = queue.Queue()
 
-    try:
-        return asyncio.run(_with_timeout())
-    except asyncio.TimeoutError:
-        return {
-            "answer": f"⏱ Агент не уложился в {timeout} секунд. Попробуйте упростить вопрос.",
-            "tool_calls": [],
-        }
-    except Exception as e:
-        return {"answer": f"❌ Ошибка: {e}", "tool_calls": []}
+    async def _stream():
+        options = ClaudeAgentOptions(
+            system_prompt=_system_prompt(config_name),
+            allowed_tools=[],
+            mcp_servers={"odata": _get_mcp_server()},
+            permission_mode="bypassPermissions",
+            max_turns=15,
+            model=MODEL,
+        )
+        async with ClaudeSDKClient(options=options) as client:
+            await client.query(question)
+            async for message in client.receive_response():
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock) and block.text:
+                            q.put(("text", block.text))
+                        elif isinstance(block, ToolUseBlock):
+                            name = block.name.replace("mcp__odata__", "")
+                            tool_calls_out.append({"tool": name, "args": block.input})
+                elif isinstance(message, ResultMessage) and message.result:
+                    q.put(("text", message.result))
+
+    def _thread():
+        async def _with_timeout():
+            await asyncio.wait_for(_stream(), timeout=timeout)
+        try:
+            asyncio.run(_with_timeout())
+        except asyncio.TimeoutError:
+            q.put(("text", f"\n⏱ Агент не уложился в {timeout} секунд."))
+        except Exception as e:
+            q.put(("text", f"\n❌ Ошибка: {e}"))
+        finally:
+            q.put(("done", None))
+
+    threading.Thread(target=_thread, daemon=True).start()
+
+    while True:
+        kind, value = q.get(timeout=timeout + 10)
+        if kind == "done":
+            break
+        yield value
+
+
+def run_agent(question: str, config_name: str, timeout: int = 120) -> dict:
+    """Non-streaming wrapper (used by tests)."""
+    tool_calls: list = []
+    chunks = list(stream_agent(question, config_name, tool_calls, timeout))
+    answer = "".join(chunks) or "Нет ответа."
+    return {"answer": answer, "tool_calls": tool_calls}
