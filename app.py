@@ -198,8 +198,141 @@ def _send_message(chat_id: str, question: str):
     })
 
 
+# ── Analytics page ─────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def _load_sales(config: str) -> "pd.DataFrame":
+    import pandas as pd
+    from odata.client import fetch_entity
+    payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Period,Сумма", top=1000)
+    records = payload.get("value", [])
+    if not records:
+        return pd.DataFrame(columns=["Period", "Сумма"])
+    df = pd.DataFrame(records)
+    df["Period"] = pd.to_datetime(df["Period"], errors="coerce")
+    df["Сумма"] = pd.to_numeric(df["Сумма"], errors="coerce").fillna(0)
+    return df
+
+
+@st.cache_data(ttl=300)
+def _load_sales_by_product(config: str) -> "pd.DataFrame":
+    import pandas as pd
+    from odata.client import fetch_entity
+    payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Номенклатура_Key,Сумма", top=1000)
+    records = payload.get("value", [])
+    if not records:
+        return pd.DataFrame(columns=["Номенклатура_Key", "Сумма"])
+    df = pd.DataFrame(records)
+    df["Сумма"] = pd.to_numeric(df["Сумма"], errors="coerce").fillna(0)
+    return df
+
+
+@st.cache_data(ttl=300)
+def _load_sales_by_warehouse(config: str) -> "pd.DataFrame":
+    import pandas as pd
+    from odata.client import fetch_entity
+    payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Склад_Key,Сумма", top=1000)
+    records = payload.get("value", [])
+    if not records:
+        return pd.DataFrame(columns=["Склад_Key", "Сумма"])
+    df = pd.DataFrame(records)
+    df["Сумма"] = pd.to_numeric(df["Сумма"], errors="coerce").fillna(0)
+    return df
+
+
+@st.cache_data(ttl=300)
+def _load_returns(config: str) -> "pd.DataFrame":
+    import pandas as pd
+    from odata.client import fetch_entity
+    try:
+        payload = fetch_entity(config, "Document_ВозвратТоваровОтКлиента", select="Номенклатура_Key", top=500)
+        records = payload.get("value", [])
+    except Exception:
+        return pd.DataFrame(columns=["Номенклатура_Key", "count"])
+    if not records:
+        return pd.DataFrame(columns=["Номенклатура_Key", "count"])
+    import pandas as pd
+    df = pd.DataFrame(records)
+    return df.groupby("Номенклатура_Key").size().reset_index(name="count")
+
+
+def analytics_page():
+    import pandas as pd
+    sidebar()
+    config = st.session_state.config
+
+    st.title(f"📈 Аналитика — {CONFIG_OPTIONS[config]}")
+    st.caption("Данные кешируются на 5 минут. Переключите конфигурацию в боковой панели.")
+
+    # ── Продажи по месяцам ────────────────────────────────────────────────────
+    st.subheader("Продажи по месяцам")
+    with st.spinner("Загрузка..."):
+        df_sales = _load_sales(config)
+    if df_sales.empty:
+        st.info("Нет данных о продажах.")
+    else:
+        monthly = (
+            df_sales.dropna(subset=["Period"])
+            .assign(month=lambda d: d["Period"].dt.to_period("M").astype(str))
+            .groupby("month")["Сумма"].sum()
+            .reset_index()
+            .set_index("month")
+        )
+        st.line_chart(monthly)
+        with st.expander("Данные"):
+            st.dataframe(monthly.reset_index(), use_container_width=True)
+
+    # ── Топ-10 товаров по выручке ─────────────────────────────────────────────
+    st.subheader("Топ-10 товаров по выручке")
+    with st.spinner("Загрузка..."):
+        df_prod = _load_sales_by_product(config)
+    if df_prod.empty:
+        st.info("Нет данных.")
+    else:
+        top10 = (
+            df_prod.groupby("Номенклатура_Key")["Сумма"].sum()
+            .nlargest(10)
+            .reset_index()
+            .set_index("Номенклатура_Key")
+        )
+        st.bar_chart(top10)
+        with st.expander("Данные"):
+            st.dataframe(top10.reset_index(), use_container_width=True)
+
+    # ── Продажи по складам ────────────────────────────────────────────────────
+    st.subheader("Продажи по складам")
+    with st.spinner("Загрузка..."):
+        df_wh = _load_sales_by_warehouse(config)
+    if df_wh.empty:
+        st.info("Нет данных.")
+    else:
+        by_wh = (
+            df_wh.groupby("Склад_Key")["Сумма"].sum()
+            .reset_index()
+            .set_index("Склад_Key")
+        )
+        st.bar_chart(by_wh)
+        with st.expander("Данные"):
+            st.dataframe(by_wh.reset_index(), use_container_width=True)
+
+    # ── Возвраты по товарам (UT only) ─────────────────────────────────────────
+    if config == "ut":
+        st.subheader("Возвраты по товарам")
+        with st.spinner("Загрузка..."):
+            df_ret = _load_returns(config)
+        if df_ret.empty:
+            st.info("Нет данных о возвратах.")
+        else:
+            st.bar_chart(df_ret.set_index("Номенклатура_Key"))
+            with st.expander("Данные"):
+                st.dataframe(df_ret, use_container_width=True)
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 if not st.session_state.authenticated:
     login_page()
 else:
-    chat_page()
+    tab_chat, tab_analytics = st.tabs(["💬 Чат", "📈 Аналитика"])
+    with tab_chat:
+        chat_page()
+    with tab_analytics:
+        analytics_page()
