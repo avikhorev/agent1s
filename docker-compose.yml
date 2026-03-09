@@ -7,11 +7,8 @@ services:
       ODATA_MOCK_URL: http://odata-mock:8080
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Secret123!}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://openrouter.ai/api}
-      ANTHROPIC_AUTH_TOKEN: ${OPENROUTER_API_KEY:-}
-      ANTHROPIC_API_KEY: ""
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${ANTHROPIC_DEFAULT_HAIKU_MODEL:-stepfun/step-3.5-flash:free}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${ANTHROPIC_DEFAULT_HAIKU_MODEL:-claude-haiku-4-5-20251001}
     depends_on:
       odata-mock:
         condition: service_started

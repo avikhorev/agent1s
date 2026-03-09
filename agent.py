@@ -117,7 +117,7 @@ async def _run(question: str, config_name: str) -> dict:
     return {"answer": answer, "tool_calls": tool_calls}
 
 
-def run_agent(question: str, config_name: str, timeout: int = 90) -> dict:
+def run_agent(question: str, config_name: str, timeout: int = 120) -> dict:
     """Synchronous wrapper — safe to call from Streamlit."""
     async def _with_timeout():
         return await asyncio.wait_for(_run(question, config_name), timeout=timeout)
