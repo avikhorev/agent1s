@@ -1,6 +1,7 @@
 """1C OData AI Agent — Streamlit chat interface."""
 import os
 import queue
+import re
 import threading
 import time
 import uuid
@@ -14,6 +15,8 @@ CONFIG_OPTIONS = {
     "ut": "📦 Управление торговлей 11",
     "bp": "📊 Бухгалтерия предприятия 3.0",
 }
+
+_SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 EXAMPLE_QUESTIONS = [
     "Что происходит с продажами? Покажи динамику по месяцам за 2024 год",
@@ -31,6 +34,20 @@ st.set_page_config(
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
+)
+
+st.markdown(
+    """
+    <style>
+    /* Hide Streamlit's built-in top-right running indicator (multiple selectors for version compat) */
+    div[data-testid="stStatusWidget"],
+    div[data-testid="stStatusWidget"] *,
+    .stStatusWidget,
+    [class*="StatusWidget"],
+    header[data-testid="stHeader"] .stToolbar { display: none !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 # ── Session state init ─────────────────────────────────────────────────────────
@@ -72,6 +89,94 @@ def login_page():
 
 def _get_draft_key(chat_id: str) -> str:
     return f"chat_draft_{chat_id}"
+
+
+_QUESTION_WORDS_RU = {"какие", "какой", "какая", "какое", "что", "где", "как", "когда",
+                       "кто", "почему", "зачем", "сколько", "каких", "каким", "укажите",
+                       "помогите", "уточните", "расскажите"}
+
+# Meta-options that are UI actions, not user messages — always filtered out
+_META_OPTION_FRAGMENTS = {"указать свой", "свой период", "другой вариант", "пользовательский",
+                           "уточнить", "другое", "иное", "произвольн"}
+
+
+def _extract_suggestions(content: str) -> list[str]:
+    """Extract clickable options from assistant message.
+
+    Priority 1: structured [OPTIONS: a | b | c] tag emitted by the LLM.
+    Priority 2: heuristic extraction (only if no OPTIONS tag found).
+    """
+    # Priority 1: explicit LLM tag
+    m = re.search(r"\[OPTIONS:\s*(.+?)\]", content, re.IGNORECASE)
+    if m:
+        raw = m.group(1)
+        options = [o.strip().rstrip("?").strip() for o in raw.split("|") if o.strip()]
+        options = [o for o in options if 2 < len(o) <= 60]
+        options = [o for o in options if not any(f in o.lower() for f in _META_OPTION_FRAGMENTS)]
+        return options[:4]
+
+    # Priority 2: heuristic extraction
+    seen: set[str] = set()
+    suggestions: list[str] = []
+
+    def _add(text: str):
+        text = re.sub(r"\*+", "", text)
+        text = re.sub(r"^[•\-\*\d]+[.)]\s*", "", text.strip()).strip()
+        text = text.rstrip("?:,;. ").strip()
+        text = re.sub(r"\s+и\s+т\.?\s*д\.?.*$", "", text).strip()
+        if not text or len(text) < 3 or len(text) > 80:
+            return
+        first = text.split()[0].lower().rstrip("?:,") if text.split() else ""
+        if first in _QUESTION_WORDS_RU:
+            return
+        key = text.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        suggestions.append(text)
+
+    for quoted in re.findall(r"«([^»]+)»", content):
+        _add(quoted)
+
+    for paren in re.findall(r"\(([^)]{5,150})\)", content):
+        parts = [p.strip() for p in paren.split(",")]
+        if len(parts) >= 2:
+            for part in parts:
+                _add(part)
+
+    for line in content.splitlines():
+        lm = re.match(r"^(?:[•\-\*]|\d+[.)]) +(.+)", line.strip())
+        if lm:
+            item = lm.group(1).strip()
+            first = item.split()[0].lower().rstrip("?:,") if item.split() else ""
+            if first not in _QUESTION_WORDS_RU and len(item) < 80:
+                _add(item)
+
+    return suggestions
+
+
+def _strip_options_tag(content: str) -> str:
+    """Remove [OPTIONS: ...] tag from displayed message content."""
+    return re.sub(r"\n?\[OPTIONS:[^\]]*\]", "", content, flags=re.IGNORECASE).rstrip()
+
+
+def _render_suggestions(content: str, chat_id: str, msg_idx: int, running: bool):
+    """Render clickable suggestion buttons extracted from assistant message."""
+    suggestions = _extract_suggestions(content)
+    if not suggestions:
+        return
+    prefill_key = f"prefill_{_get_draft_key(chat_id)}"
+    cols = st.columns(min(len(suggestions), 3))
+    for i, suggestion in enumerate(suggestions):
+        with cols[i % len(cols)]:
+            if st.button(
+                suggestion,
+                key=f"suggest_{chat_id}_{msg_idx}_{i}",
+                disabled=running,
+                width="stretch",
+            ):
+                st.session_state[prefill_key] = suggestion
+                st.rerun()
 
 
 def _is_any_operation_running() -> bool:
@@ -154,20 +259,39 @@ def _finalize_operation(chat_id: str):
         return
 
     full_text = "".join(op["final_chunks"]).strip()
+    # ResultMessage often includes all prior thinking text as a prefix — strip it.
+    thinking_prefix = "".join(op["thinking_chunks"]).strip()
+    if thinking_prefix and full_text.startswith(thinking_prefix):
+        full_text = full_text[len(thinking_prefix):].strip()
+
+    # Build thinking display: each chunk is one reasoning step, joined with dividers.
+    # Also strip the final answer from the end so it doesn't duplicate in the expander.
+    thinking_steps = [c.strip() for c in op["thinking_chunks"] if c.strip()]
+    if full_text and thinking_steps and thinking_steps[-1] == full_text:
+        thinking_steps = thinking_steps[:-1]
+    elif full_text and thinking_steps:
+        last = thinking_steps[-1]
+        if last.endswith(full_text):
+            trimmed = last[: -len(full_text)].strip()
+            thinking_steps = thinking_steps[:-1] + ([trimmed] if trimmed else [])
+    thinking_display = "\n\n---\n\n".join(thinking_steps)
+
     if not full_text:
-        thinking_text = "".join(op["thinking_chunks"]).strip()
-        if thinking_text:
-            full_text = f"{thinking_text}\n\n⏱ Агент завершил без финального блока. Показан промежуточный результат."
+        if thinking_display:
+            full_text = thinking_display
         elif op["tool_calls"]:
-            full_text = "⏱ Агент не вернул итоговый ответ. Запросы к данным выполнены, смотрите детали в блоке инструментов."
+            full_text = "Запросы к данным выполнены, смотрите детали ниже."
         else:
             full_text = "Нет ответа."
+
+    # Always keep the raw thinking for the collapsed expander, even if it became the answer.
+    raw_thinking = "\n\n---\n\n".join(c.strip() for c in op["thinking_chunks"] if c.strip())
 
     st.session_state.chats[chat_id]["messages"].append(
         {
             "role": "assistant",
             "content": full_text,
-            "thinking": "".join(op["thinking_chunks"]),
+            "thinking": raw_thinking,
             "thinking_count": len(op["thinking_chunks"]),
             "tool_calls": op["tool_calls"],
         }
@@ -281,18 +405,27 @@ def chat_page():
         st.session_state[prefill_draft_key] = None
 
     # Header
+    _drain_operation_events(chat_id)
+    running = _is_operation_running_for_chat(chat_id)
+
+    model_name = os.getenv("ANTHROPIC_MODEL", "claude")
     col1, col2 = st.columns([3, 1])
     with col1:
         st.title(f"💬 {chat['title']}")
     with col2:
-        st.caption(f"Конфигурация: **{CONFIG_OPTIONS[config]}**")
+        spin_char = _SPIN[int(time.time() * 6) % len(_SPIN)] if running else ""
+        st.caption(f"{'`' + spin_char + '`  ' if spin_char else ''}Модель: **{model_name}**")
+    op = st.session_state.operations.get(chat_id)
 
-    _drain_operation_events(chat_id)
+    last_assistant_idx = max(
+        (i for i, m in enumerate(chat["messages"]) if m["role"] == "assistant"),
+        default=-1,
+    )
 
     # Render messages
-    for msg in chat["messages"]:
+    for msg_idx, msg in enumerate(chat["messages"]):
         with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+            st.markdown(_strip_options_tag(msg["content"]))
             if msg.get("thinking"):
                 thinking_count = msg.get("thinking_count", 1)
                 with st.expander(f"🧠 Ход рассуждений: {thinking_count}", expanded=False):
@@ -302,9 +435,8 @@ def chat_page():
                 with st.expander(f"🔧 Запросов к API: {len(msg['tool_calls'])}", expanded=False):
                     for tc in msg["tool_calls"]:
                         st.code(f"{tc['tool']}({tc['args']})", language="python")
-
-    running = _is_operation_running_for_chat(chat_id)
-    op = st.session_state.operations.get(chat_id)
+            if msg["role"] == "assistant" and msg_idx == last_assistant_idx:
+                _render_suggestions(msg["content"], chat_id, msg_idx, running)
 
     if running and op:
         with st.chat_message("assistant"):
@@ -321,7 +453,8 @@ def chat_page():
                 with st.expander(f"🔧 Запросов к API: {len(op['tool_calls'])}", expanded=False):
                     for tc in op["tool_calls"]:
                         st.code(f"{tc['tool']}({tc['args']})", language="python")
-            if st.button("⛔ Отменить", key=f"cancel_{chat_id}", type="secondary"):
+            spin = _SPIN[int(time.time() * 6) % len(_SPIN)]
+            if st.button(f"{spin} Отменить", key=f"cancel_{chat_id}", type="secondary"):
                 _cancel_operation(chat_id)
                 st.rerun()
 
@@ -444,38 +577,50 @@ def analytics_page():
         with st.expander("Данные"):
             st.dataframe(monthly.reset_index(), width="stretch")
 
-    # ── Топ-10 товаров по выручке ─────────────────────────────────────────────
-    st.subheader("Топ-10 товаров по выручке")
+    # ── Топ товаров и склады — pie charts ─────────────────────────────────────
     with st.spinner("Загрузка..."):
         df_prod = _load_sales_by_product(config)
-    if df_prod.empty:
-        st.info("Нет данных.")
-    else:
-        top10 = (
-            df_prod.groupby("Номенклатура_Key")["Сумма"].sum()
-            .nlargest(10)
-            .reset_index()
-            .set_index("Номенклатура_Key")
-        )
-        st.bar_chart(top10)
-        with st.expander("Данные"):
-            st.dataframe(top10.reset_index(), width="stretch")
-
-    # ── Продажи по складам ────────────────────────────────────────────────────
-    st.subheader("Продажи по складам")
-    with st.spinner("Загрузка..."):
         df_wh = _load_sales_by_warehouse(config)
-    if df_wh.empty:
-        st.info("Нет данных.")
-    else:
-        by_wh = (
-            df_wh.groupby("Склад_Key")["Сумма"].sum()
-            .reset_index()
-            .set_index("Склад_Key")
-        )
-        st.bar_chart(by_wh)
-        with st.expander("Данные"):
-            st.dataframe(by_wh.reset_index(), width="stretch")
+
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("Доля выручки по товарам")
+        if df_prod.empty:
+            st.info("Нет данных.")
+        else:
+            import plotly.express as px
+            grouped = df_prod.groupby("Номенклатура_Key")["Сумма"].sum().reset_index()
+            top8 = grouped.nlargest(8, "Сумма")
+            rest = grouped["Сумма"].sum() - top8["Сумма"].sum()
+            if rest > 0:
+                import pandas as pd
+                top8 = pd.concat([
+                    top8,
+                    pd.DataFrame([{"Номенклатура_Key": "Прочие", "Сумма": rest}]),
+                ], ignore_index=True)
+            fig = px.pie(top8, values="Сумма", names="Номенклатура_Key",
+                         hole=0.35)
+            fig.update_traces(textposition="inside", textinfo="percent+label")
+            fig.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig, use_container_width=True)
+            with st.expander("Данные"):
+                st.dataframe(top8, width="stretch")
+
+    with col_right:
+        st.subheader("Продажи по складам")
+        if df_wh.empty:
+            st.info("Нет данных.")
+        else:
+            import plotly.express as px
+            by_wh = df_wh.groupby("Склад_Key")["Сумма"].sum().reset_index()
+            fig2 = px.pie(by_wh, values="Сумма", names="Склад_Key",
+                          hole=0.35)
+            fig2.update_traces(textposition="inside", textinfo="percent+label")
+            fig2.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig2, use_container_width=True)
+            with st.expander("Данные"):
+                st.dataframe(by_wh, width="stretch")
 
     # ── Возвраты по товарам (UT only) ─────────────────────────────────────────
     if config == "ut":

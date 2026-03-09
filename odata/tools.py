@@ -1,11 +1,17 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from odata.client import fetch_by_key, fetch_entity, fetch_metadata, fetch_service_document, fetch_service_root
 from odata.metadata import parse_entity_fields
 
 HEAVY_ENTITIES = {"AccumulationRegister_Продажи"}
 MAX_SKIP_NO_FILTER = 5000
+
+
+def _default_dates() -> tuple[str, str]:
+    """Last 12 months up to today."""
+    today = date.today()
+    return (today - timedelta(days=365)).strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d")
 
 
 def _has_date_filter(filter_expr: str | None) -> bool:
@@ -139,11 +145,13 @@ def get_by_key(config_name: str, entity_name: str, ref_key: str) -> dict:
 
 def top_customers_by_revenue(
     config_name: str,
-    date_from: str = "2024-01-01",
-    date_to: str = "2025-12-31",
-    limit: int = 5,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 10,
 ) -> dict:
     """Optimized server-side workflow for top-N customers by revenue. Scans AccumulationRegister_Продажи in large pages and returns ranked totals with customer names."""
+    if not date_from or not date_to:
+        date_from, date_to = _default_dates()
     page_size = 5000
     skip = 0
     chunks = 0
@@ -220,11 +228,13 @@ def top_customers_by_revenue(
 
 def top_products_by_revenue(
     config_name: str,
-    date_from: str = "2024-01-01",
-    date_to: str = "2025-12-31",
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 10,
 ) -> dict:
     """Optimized top-N products by revenue in UT using AccumulationRegister_Продажи."""
+    if not date_from or not date_to:
+        date_from, date_to = _default_dates()
     page_size = 5000
     skip = 0
     chunks = 0
@@ -299,10 +309,12 @@ def top_products_by_revenue(
 
 def monthly_sales_summary(
     config_name: str,
-    date_from: str = "2024-01-01",
-    date_to: str = "2024-12-31",
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> dict:
     """Optimized monthly sales summary from AccumulationRegister_Продажи."""
+    if not date_from or not date_to:
+        date_from, date_to = _default_dates()
     page_size = 5000
     skip = 0
     chunks = 0
@@ -362,27 +374,50 @@ def monthly_sales_summary(
 
 def top_returned_products(
     config_name: str,
-    date_from: str = "2024-01-01",
-    date_to: str = "2024-12-31",
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 10,
 ) -> dict:
-    """Optimized top-N returned products for UT from Document_ВозвратТоваровОтКлиента."""
+    """Optimized top-N returned products for UT from Document_ВозвратТоваровОтКлиента_Товары."""
+    if not date_from or not date_to:
+        date_from, date_to = _default_dates()
     page_size = 2000
+
+    # Step 1: collect Ref_Keys of return documents within the date range.
+    doc_filter = f"Posted eq true and Date ge datetime'{date_from}' and Date le datetime'{date_to}'"
+    valid_ref_keys: set[str] = set()
+    skip = 0
+    while True:
+        payload = fetch_entity(
+            config_name,
+            "Document_ВозвратТоваровОтКлиента",
+            select="Ref_Key",
+            filter_expr=doc_filter,
+            top=page_size,
+            skip=skip,
+        )
+        records = payload.get("value", [])
+        if not records:
+            break
+        for row in records:
+            key = row.get("Ref_Key")
+            if key:
+                valid_ref_keys.add(key)
+        if len(records) < page_size:
+            break
+        skip += page_size
+
+    # Step 2: scan line items, keeping only those from matched documents.
     skip = 0
     chunks = 0
     rows_scanned = 0
     totals = defaultdict(float)
 
-    filter_expr = (
-        f"Posted eq true and Date ge datetime'{date_from}' and Date le datetime'{date_to}'"
-    )
     while True:
         payload = fetch_entity(
             config_name,
-            "Document_ВозвратТоваровОтКлиента",
-            select="Номенклатура_Key,Сумма",
-            filter_expr=filter_expr,
-            orderby="Date",
+            "Document_ВозвратТоваровОтКлиента_Товары",
+            select="Ref_Key,Номенклатура_Key,Сумма",
             top=page_size,
             skip=skip,
         )
@@ -392,6 +427,8 @@ def top_returned_products(
         chunks += 1
         rows_scanned += len(records)
         for row in records:
+            if row.get("Ref_Key") not in valid_ref_keys:
+                continue
             key = row.get("Номенклатура_Key")
             if not key:
                 continue

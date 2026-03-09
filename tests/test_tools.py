@@ -118,14 +118,16 @@ def test_monthly_sales_summary_aggregates_by_month():
 def test_top_returned_products_aggregates_and_resolves_names():
     from odata.tools import top_returned_products
 
-    only_page = {
+    # Step 1: header docs with Ref_Keys; Step 2: line items referencing those keys.
+    headers_page = {"value": [{"Ref_Key": "doc1"}, {"Ref_Key": "doc2"}]}
+    lines_page = {
         "value": [
-            {"Номенклатура_Key": "r1", "Сумма": 40},
-            {"Номенклатура_Key": "r2", "Сумма": 30},
-            {"Номенклатура_Key": "r1", "Сумма": 5},
+            {"Ref_Key": "doc1", "Номенклатура_Key": "r1", "Сумма": 40},
+            {"Ref_Key": "doc2", "Номенклатура_Key": "r2", "Сумма": 30},
+            {"Ref_Key": "doc1", "Номенклатура_Key": "r1", "Сумма": 5},
         ]
     }
-    with patch("odata.tools.fetch_entity", return_value=only_page), patch(
+    with patch("odata.tools.fetch_entity", side_effect=[headers_page, lines_page]), patch(
         "odata.tools.fetch_by_key",
         side_effect=[{"Description": "Ret 1"}, {"Description": "Ret 2"}],
     ):

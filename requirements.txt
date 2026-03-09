@@ -4,3 +4,4 @@ claude-agent-sdk>=0.1.0
 pytest>=8.0.0
 respx>=0.22.0
 pandas>=2.0.0
+plotly>=5.0.0

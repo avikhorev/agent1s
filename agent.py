@@ -1,5 +1,6 @@
 """Claude Agent SDK runner for 1C OData queries."""
 import asyncio
+import datetime
 import os
 import queue
 import re
@@ -118,61 +119,81 @@ def _system_prompt(config_name: str) -> str:
 Формат ответа:
 - Русский язык, кратко.
 - Для ранжирования/динамики — markdown-таблицы.
+- Если нужно уточнить параметры запроса, добавь в самом конце строку:
+  [OPTIONS: вариант 1 | вариант 2 | вариант 3]
+  Правила для OPTIONS: только конкретные значения, которые пользователь готов озвучить вслух.
+  Не включай: «Указать свой период», «Другой вариант», «Уточнить», «Пользовательский ввод».
+  Максимум 4 варианта, каждый не длиннее 40 символов, без вопросительных знаков.
+  Пример: [OPTIONS: Последние 3 месяца | Последние 6 месяцев | Весь 2025 год | Весь 2024 год]
 """
 
 
+def _default_date_range() -> tuple[str, str]:
+    today = datetime.date.today()
+    date_to = today.strftime("%Y-%m-%d")
+    date_from = (today - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
+    return date_from, date_to
+
+
+def _extract_limit(question: str, default: int = 10) -> int:
+    """Extract a numeric limit from question text, e.g. 'топ-5' → 5, 'топ 20' → 20."""
+    m = re.search(r"(?:топ|top)[- ](\d+)", question.lower())
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\b(\d+)\b", question)
+    if m:
+        n = int(m.group(1))
+        if 1 <= n <= 100:
+            return n
+    return default
+
+
 def _try_direct_answer(question: str, config_name: str) -> dict | None:
-    q = question.lower()
-    has_returns_intent = ("возврат" in q) or ("возвращ" in q)
-    if _normalize_config(config_name) != "ut":
+    cfg = _normalize_config(config_name)
+    if cfg != "ut":
         return None
 
-    is_top5_revenue = (
-        ("топ-5" in q or "top-5" in q or "топ 5" in q)
-        and "клиент" in q
-        and "выруч" in q
-    )
-    if is_top5_revenue:
-        result = top_customers_by_revenue("ut", limit=5)
+    q = question.lower()
+    has_returns_intent = ("возврат" in q) or ("возвращ" in q)
+    date_from, date_to = _default_date_range()
+
+    is_top_customers = "клиент" in q and "выруч" in q
+    if is_top_customers:
+        limit = _extract_limit(question, default=10)
+        result = top_customers_by_revenue(cfg, date_from=date_from, date_to=date_to, limit=limit)
         return {
             "answer": result["markdown_table"],
-            "tool_call": {
-                "tool": "top_customers_by_revenue",
-                "args": {"config_name": "ut", "date_from": "2024-01-01", "date_to": "2025-12-31", "limit": 5},
-            },
+            "tool_call": {"tool": "top_customers_by_revenue",
+                          "args": {"config_name": cfg, "date_from": date_from, "date_to": date_to, "limit": limit}},
         }
 
     is_top_products = ("топ" in q or "top" in q) and "товар" in q and "выруч" in q
     if is_top_products:
-        result = top_products_by_revenue("ut", limit=10)
+        limit = _extract_limit(question, default=10)
+        result = top_products_by_revenue(cfg, date_from=date_from, date_to=date_to, limit=limit)
         return {
             "answer": result["markdown_table"],
-            "tool_call": {
-                "tool": "top_products_by_revenue",
-                "args": {"config_name": "ut", "date_from": "2024-01-01", "date_to": "2025-12-31", "limit": 10},
-            },
+            "tool_call": {"tool": "top_products_by_revenue",
+                          "args": {"config_name": cfg, "date_from": date_from, "date_to": date_to, "limit": limit}},
         }
 
     is_monthly_sales = ("по месяц" in q or "динамик" in q) and "продаж" in q
     if is_monthly_sales:
-        result = monthly_sales_summary("ut", date_from="2024-01-01", date_to="2024-12-31")
+        result = monthly_sales_summary(cfg, date_from=date_from, date_to=date_to)
         return {
             "answer": result["markdown_table"],
-            "tool_call": {
-                "tool": "monthly_sales_summary",
-                "args": {"config_name": "ut", "date_from": "2024-01-01", "date_to": "2024-12-31"},
-            },
+            "tool_call": {"tool": "monthly_sales_summary",
+                          "args": {"config_name": cfg, "date_from": date_from, "date_to": date_to}},
         }
 
-    is_returns_top = has_returns_intent and ("товар" in q or "продукт" in q) and (("чаще" in q) or ("топ" in q))
+    is_returns_top = has_returns_intent and ("товар" in q or "продукт" in q) and ("чаще" in q or "топ" in q)
     if is_returns_top:
-        result = top_returned_products("ut", date_from="2024-01-01", date_to="2024-12-31", limit=10)
+        limit = _extract_limit(question, default=10)
+        result = top_returned_products(cfg, date_from=date_from, date_to=date_to, limit=limit)
         return {
             "answer": result["markdown_table"],
-            "tool_call": {
-                "tool": "top_returned_products",
-                "args": {"config_name": "ut", "date_from": "2024-01-01", "date_to": "2024-12-31", "limit": 10},
-            },
+            "tool_call": {"tool": "top_returned_products",
+                          "args": {"config_name": cfg, "date_from": date_from, "date_to": date_to, "limit": limit}},
         }
     return None
 

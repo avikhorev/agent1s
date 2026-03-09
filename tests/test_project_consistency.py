@@ -27,7 +27,7 @@ def test_agent_prefers_anthropic_model_env():
 
 def test_chat_ui_has_cancel_and_free_text_input():
     app_text = Path("app.py").read_text(encoding="utf-8")
-    assert "⛔ Отменить" in app_text
+    assert "Отменить" in app_text
     assert 'st.text_area("Сообщение"' in app_text
     assert "chat_input(" not in app_text
     assert "prefill_draft_key" in app_text

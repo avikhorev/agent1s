@@ -335,7 +335,7 @@ def test_stream_agent_events_uses_direct_top5_fast_path(monkeypatch):
     monkeypatch.setattr(
         agent,
         "top_customers_by_revenue",
-        lambda config_name, limit=5: {
+        lambda config_name, date_from=None, date_to=None, limit=5: {
             "markdown_table": "| Rank | CustomerName | TotalRevenue |\n|---:|---|---:|\n| 1 | A | 100.00 |"
         },
     )
@@ -347,24 +347,13 @@ def test_stream_agent_events_uses_direct_top5_fast_path(monkeypatch):
             timeout=2,
         )
     )
-    assert events == [
-        {"type": "status", "text": "🚀 Запрос отправлен агенту. Строю оптимальный план..."},
-        {"type": "status", "text": "⚡ Использую оптимизированный быстрый путь."},
-        {
-            "type": "tool_call",
-            "tool": "top_customers_by_revenue",
-            "args": {
-                "config_name": "ut",
-                "date_from": "2024-01-01",
-                "date_to": "2025-12-31",
-                "limit": 5,
-            },
-        },
-        {
-            "type": "final",
-            "text": "| Rank | CustomerName | TotalRevenue |\n|---:|---|---:|\n| 1 | A | 100.00 |",
-        },
-    ]
+    assert events[0] == {"type": "status", "text": "🚀 Запрос отправлен агенту. Строю оптимальный план..."}
+    assert events[1] == {"type": "status", "text": "⚡ Использую оптимизированный быстрый путь."}
+    assert events[2]["type"] == "tool_call"
+    assert events[2]["tool"] == "top_customers_by_revenue"
+    assert events[2]["args"]["config_name"] == "ut"
+    assert events[2]["args"]["limit"] == 5
+    assert events[3]["type"] == "final"
 
 
 def test_stream_agent_events_uses_direct_returns_fast_path(monkeypatch):
