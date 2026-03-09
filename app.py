@@ -263,13 +263,19 @@ def chat_page():
     config = st.session_state.config
     draft_key = _get_draft_key(chat_id)
     clear_draft_key = f"clear_{draft_key}"
+    prefill_draft_key = f"prefill_{draft_key}"
     if draft_key not in st.session_state:
         st.session_state[draft_key] = ""
     if clear_draft_key not in st.session_state:
         st.session_state[clear_draft_key] = False
+    if prefill_draft_key not in st.session_state:
+        st.session_state[prefill_draft_key] = None
     if st.session_state[clear_draft_key]:
         st.session_state[draft_key] = ""
         st.session_state[clear_draft_key] = False
+    if st.session_state[prefill_draft_key] is not None:
+        st.session_state[draft_key] = st.session_state[prefill_draft_key]
+        st.session_state[prefill_draft_key] = None
 
     # Header
     col1, col2 = st.columns([3, 1])
@@ -332,7 +338,7 @@ def chat_page():
     for i, q in enumerate(EXAMPLE_QUESTIONS):
         with cols[i % 2]:
             if st.button(q, key=f"example_{chat_id}_{i}", width="stretch", disabled=running):
-                st.session_state[draft_key] = q
+                st.session_state[prefill_draft_key] = q
                 st.rerun()
     if running:
         time.sleep(0.5)

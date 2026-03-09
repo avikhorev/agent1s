@@ -25,7 +25,10 @@ def _get_mcp_server():
     return _mcp_server
 
 
-MODEL = os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL", "stepfun/step-3.5-flash:free")
+MODEL = os.getenv(
+    "ANTHROPIC_MODEL",
+    os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL", "stepfun/step-3.5-flash:free"),
+)
 
 
 def _system_prompt(config_name: str) -> str:
