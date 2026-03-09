@@ -125,9 +125,12 @@ def test_stream_agent_events_emits_thinking_tool_and_final(monkeypatch):
     monkeypatch.setattr(agent, "ToolUseBlock", FakeToolUseBlock)
     monkeypatch.setattr(agent, "ClaudeSDKClient", FakeClient)
     monkeypatch.setattr(agent, "ClaudeAgentOptions", lambda **kwargs: types.SimpleNamespace(**kwargs))
+    monkeypatch.setattr(agent, "_ensure_warm_status_thread", lambda: None)
 
     events = list(agent.stream_agent_events("q", "ut", timeout=2))
-    assert events == [
+    assert events[0]["type"] == "status"
+    assert events[1]["type"] == "status"
+    assert events[2:] == [
         {"type": "thinking", "text": "think-1"},
         {"type": "tool_call", "tool": "describe_entity", "args": {"config_name": "ut"}},
         {"type": "thinking", "text": "think-2"},
@@ -197,12 +200,15 @@ def test_stream_agent_events_timeout_returns_partial_as_final(monkeypatch):
     monkeypatch.setattr(agent, "ToolUseBlock", type("UnusedToolUseBlock", (), {}))
     monkeypatch.setattr(agent, "ClaudeSDKClient", FakeClient)
     monkeypatch.setattr(agent, "ClaudeAgentOptions", lambda **kwargs: types.SimpleNamespace(**kwargs))
+    monkeypatch.setattr(agent, "_ensure_warm_status_thread", lambda: None)
 
     events = list(agent.stream_agent_events("q", "ut", timeout=0.05))
-    assert events[0] == {"type": "thinking", "text": "partial-answer"}
-    assert events[1]["type"] == "final"
-    assert "partial-answer" in events[1]["text"]
-    assert "⏱ Агент не уложился" in events[1]["text"]
+    assert events[0]["type"] == "status"
+    assert events[1]["type"] == "status"
+    assert events[2] == {"type": "thinking", "text": "partial-answer"}
+    assert events[3]["type"] == "final"
+    assert "partial-answer" in events[3]["text"]
+    assert "⏱ Агент не уложился" in events[3]["text"]
 
 
 def test_stream_agent_events_cancel_emits_user_cancel_message(monkeypatch):
@@ -238,6 +244,7 @@ def test_stream_agent_events_cancel_emits_user_cancel_message(monkeypatch):
     monkeypatch.setattr(agent, "ToolUseBlock", type("UnusedToolUseBlock", (), {}))
     monkeypatch.setattr(agent, "ClaudeSDKClient", FakeClient)
     monkeypatch.setattr(agent, "ClaudeAgentOptions", lambda **kwargs: types.SimpleNamespace(**kwargs))
+    monkeypatch.setattr(agent, "_ensure_warm_status_thread", lambda: None)
 
     cancel_event = threading.Event()
     cancel_event.set()
@@ -286,6 +293,7 @@ def test_stream_agent_events_restricts_tools_to_odata(monkeypatch):
     monkeypatch.setattr(agent, "ToolUseBlock", type("UnusedToolUseBlock", (), {}))
     monkeypatch.setattr(agent, "ClaudeSDKClient", FakeClient)
     monkeypatch.setattr(agent, "ClaudeAgentOptions", lambda **kwargs: types.SimpleNamespace(**kwargs))
+    monkeypatch.setattr(agent, "_ensure_warm_status_thread", lambda: None)
 
     list(agent.stream_agent_events("q", "ut", timeout=2))
 
@@ -296,6 +304,10 @@ def test_stream_agent_events_restricts_tools_to_odata(monkeypatch):
         "mcp__odata__describe_entity",
         "mcp__odata__query_entity",
         "mcp__odata__get_by_key",
+        "mcp__odata__top_customers_by_revenue",
+        "mcp__odata__top_products_by_revenue",
+        "mcp__odata__monthly_sales_summary",
+        "mcp__odata__top_returned_products",
     ]
     assert "Agent" in opts.disallowed_tools
     assert "TaskOutput" in opts.disallowed_tools
@@ -304,3 +316,71 @@ def test_stream_agent_events_restricts_tools_to_odata(monkeypatch):
     allow = asyncio.run(opts.can_use_tool("mcp__odata__query_entity", {"config_name": "UT"}, None))
     assert allow.behavior == "allow"
     assert allow.updated_input["config_name"] == "ut"
+    assert not hasattr(opts, "thinking")
+
+
+def test_system_prompt_requires_api_call_estimation_and_optimization():
+    import agent
+
+    prompt = agent._system_prompt("ut")
+    assert "До первого запроса оцени число API вызовов" in prompt
+    assert "Если оценка > 20 вызовов" in prompt
+    assert "специализированные инструменты/агрегацию" in prompt
+    assert "top_returned_products" in prompt
+
+
+def test_stream_agent_events_uses_direct_top5_fast_path(monkeypatch):
+    import agent
+
+    monkeypatch.setattr(
+        agent,
+        "top_customers_by_revenue",
+        lambda config_name, limit=5: {
+            "markdown_table": "| Rank | CustomerName | TotalRevenue |\n|---:|---|---:|\n| 1 | A | 100.00 |"
+        },
+    )
+
+    events = list(
+        agent.stream_agent_events(
+            "Покажи топ-5 клиентов по выручке",
+            "ut",
+            timeout=2,
+        )
+    )
+    assert events == [
+        {"type": "status", "text": "🚀 Запрос отправлен агенту. Строю оптимальный план..."},
+        {"type": "status", "text": "⚡ Использую оптимизированный быстрый путь."},
+        {
+            "type": "tool_call",
+            "tool": "top_customers_by_revenue",
+            "args": {
+                "config_name": "ut",
+                "date_from": "2024-01-01",
+                "date_to": "2025-12-31",
+                "limit": 5,
+            },
+        },
+        {
+            "type": "final",
+            "text": "| Rank | CustomerName | TotalRevenue |\n|---:|---|---:|\n| 1 | A | 100.00 |",
+        },
+    ]
+
+
+def test_stream_agent_events_uses_direct_returns_fast_path(monkeypatch):
+    import agent
+
+    monkeypatch.setattr(
+        agent,
+        "top_returned_products",
+        lambda config_name, date_from="2024-01-01", date_to="2024-12-31", limit=10: {
+            "markdown_table": "| Rank | Product | ReturnAmount |\n|---:|---|---:|\n| 1 | R | 10.00 |"
+        },
+    )
+
+    events = list(agent.stream_agent_events("Какие товары чаще всего возвращают за 2024 год?", "ut", timeout=2))
+    assert events[0]["type"] == "status"
+    assert events[1]["type"] == "status"
+    assert events[2]["type"] == "tool_call"
+    assert events[2]["tool"] == "top_returned_products"
+    assert events[3]["type"] == "final"

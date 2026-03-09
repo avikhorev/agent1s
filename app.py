@@ -103,6 +103,7 @@ def _start_operation(chat_id: str, question: str):
         "running": True,
         "queue": event_queue,
         "cancel_event": cancel_event,
+        "status_events": [],
         "thinking_chunks": [],
         "tool_calls": [],
         "final_chunks": [],
@@ -137,6 +138,8 @@ def _drain_operation_events(chat_id: str):
 
         if event["type"] == "thinking":
             op["thinking_chunks"].append(event["text"])
+        elif event["type"] == "status":
+            op["status_events"].append(event["text"])
         elif event["type"] == "tool_call":
             op["tool_calls"].append({"tool": event["tool"], "args": event["args"]})
         elif event["type"] == "final":
@@ -305,7 +308,12 @@ def chat_page():
 
     if running and op:
         with st.chat_message("assistant"):
-            st.markdown("⏳ Агент анализирует данные...")
+            status = op["status_events"][-1] if op["status_events"] else "⏳ Агент анализирует данные..."
+            st.markdown(status)
+            if op["status_events"]:
+                with st.expander(f"📡 Статус: {len(op['status_events'])}", expanded=False):
+                    for s in op["status_events"]:
+                        st.markdown(f"- {s}")
             if op["thinking_chunks"]:
                 with st.expander(f"🧠 Ход рассуждений: {len(op['thinking_chunks'])}", expanded=False):
                     st.markdown("".join(op["thinking_chunks"]))
@@ -350,8 +358,11 @@ def chat_page():
 def _load_sales(config: str) -> "pd.DataFrame":
     import pandas as pd
     from odata.client import fetch_entity
-    payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Period,Сумма", top=1000)
-    records = payload.get("value", [])
+    try:
+        payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Period,Сумма", top=1000)
+        records = payload.get("value", [])
+    except Exception:
+        return pd.DataFrame(columns=["Period", "Сумма"])
     if not records:
         return pd.DataFrame(columns=["Period", "Сумма"])
     df = pd.DataFrame(records)
@@ -364,8 +375,11 @@ def _load_sales(config: str) -> "pd.DataFrame":
 def _load_sales_by_product(config: str) -> "pd.DataFrame":
     import pandas as pd
     from odata.client import fetch_entity
-    payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Номенклатура_Key,Сумма", top=1000)
-    records = payload.get("value", [])
+    try:
+        payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Номенклатура_Key,Сумма", top=1000)
+        records = payload.get("value", [])
+    except Exception:
+        return pd.DataFrame(columns=["Номенклатура_Key", "Сумма"])
     if not records:
         return pd.DataFrame(columns=["Номенклатура_Key", "Сумма"])
     df = pd.DataFrame(records)
@@ -377,8 +391,11 @@ def _load_sales_by_product(config: str) -> "pd.DataFrame":
 def _load_sales_by_warehouse(config: str) -> "pd.DataFrame":
     import pandas as pd
     from odata.client import fetch_entity
-    payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Склад_Key,Сумма", top=1000)
-    records = payload.get("value", [])
+    try:
+        payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Склад_Key,Сумма", top=1000)
+        records = payload.get("value", [])
+    except Exception:
+        return pd.DataFrame(columns=["Склад_Key", "Сумма"])
     if not records:
         return pd.DataFrame(columns=["Склад_Key", "Сумма"])
     df = pd.DataFrame(records)

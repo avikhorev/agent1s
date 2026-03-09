@@ -54,5 +54,9 @@ def create_odata_mcp_server():
             _tools.describe_entity,
             _tools.query_entity,
             _tools.get_by_key,
+            _tools.top_customers_by_revenue,
+            _tools.top_products_by_revenue,
+            _tools.monthly_sales_summary,
+            _tools.top_returned_products,
         )],
     )
