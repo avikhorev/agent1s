@@ -12,7 +12,6 @@ services:
       ANTHROPIC_AUTH_TOKEN: ${OPENROUTER_API_KEY}
       ANTHROPIC_API_KEY: ""
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-openrouter/free}
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${ANTHROPIC_DEFAULT_HAIKU_MODEL:-stepfun/step-3.5-flash:free}
     depends_on:
       odata-mock:
         condition: service_started

@@ -244,3 +244,58 @@ def test_stream_agent_events_cancel_emits_user_cancel_message(monkeypatch):
     events = list(agent.stream_agent_events("q", "ut", timeout=2, cancel_event=cancel_event))
     assert events[-1]["type"] == "final"
     assert "Операция отменена пользователем" in events[-1]["text"]
+
+
+def test_stream_agent_events_restricts_tools_to_odata(monkeypatch):
+    import agent
+
+    captured = {}
+
+    class FakeTextBlock:
+        def __init__(self, text: str):
+            self.text = text
+
+    class FakeAssistantMessage:
+        def __init__(self, content):
+            self.content = content
+
+    class FakeResultMessage:
+        def __init__(self, result: str):
+            self.result = result
+
+    class FakeClient:
+        def __init__(self, options):
+            captured["options"] = options
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def query(self, question):
+            self.question = question
+
+        async def receive_response(self):
+            yield FakeAssistantMessage([FakeTextBlock("ok")])
+            yield FakeResultMessage("done")
+
+    monkeypatch.setattr(agent, "AssistantMessage", FakeAssistantMessage)
+    monkeypatch.setattr(agent, "ResultMessage", FakeResultMessage)
+    monkeypatch.setattr(agent, "TextBlock", FakeTextBlock)
+    monkeypatch.setattr(agent, "ToolUseBlock", type("UnusedToolUseBlock", (), {}))
+    monkeypatch.setattr(agent, "ClaudeSDKClient", FakeClient)
+    monkeypatch.setattr(agent, "ClaudeAgentOptions", lambda **kwargs: types.SimpleNamespace(**kwargs))
+
+    list(agent.stream_agent_events("q", "ut", timeout=2))
+
+    opts = captured["options"]
+    assert opts.allowed_tools == [
+        "mcp__odata__list_configs",
+        "mcp__odata__list_entities",
+        "mcp__odata__describe_entity",
+        "mcp__odata__query_entity",
+        "mcp__odata__get_by_key",
+    ]
+    assert "Agent" in opts.disallowed_tools
+    assert "TaskOutput" in opts.disallowed_tools

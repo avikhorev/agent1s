@@ -6,7 +6,7 @@ def test_env_example_contains_runtime_variables():
     assert "OPENROUTER_API_KEY=" in env_text
     assert "ODATA_MOCK_URL=" in env_text
     assert "ANTHROPIC_MODEL=openrouter/free" in env_text
-    assert "ANTHROPIC_DEFAULT_HAIKU_MODEL=stepfun/step-3.5-flash:free" in env_text
+    assert "ANTHROPIC_DEFAULT_HAIKU_MODEL" not in env_text
 
 
 def test_compose_uses_openrouter_mapping():
@@ -15,6 +15,7 @@ def test_compose_uses_openrouter_mapping():
     assert "ANTHROPIC_AUTH_TOKEN: ${OPENROUTER_API_KEY}" in compose_text
     assert 'ANTHROPIC_API_KEY: ""' in compose_text
     assert "ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-openrouter/free}" in compose_text
+    assert "ANTHROPIC_DEFAULT_HAIKU_MODEL" not in compose_text
 
 
 def test_ui_file_has_no_deprecated_use_container_width():

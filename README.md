@@ -66,7 +66,6 @@ Streamlit app (port 8501)
 | `ANTHROPIC_AUTH_TOKEN` | `${OPENROUTER_API_KEY}` | Токен авторизации для SDK |
 | `ANTHROPIC_API_KEY` | `""` | Должен быть пустым при работе через OpenRouter |
 | `ANTHROPIC_MODEL` | `openrouter/free` | Приоритетная модель для агента |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `stepfun/step-3.5-flash:free` | Модель LLM |
 | `ADMIN_USER` | `admin` | Логин |
 | `ADMIN_PASSWORD` | `Secret123!` | Пароль |
 | `ODATA_MOCK_URL` | `http://odata-mock:8080` | URL OData сервера |

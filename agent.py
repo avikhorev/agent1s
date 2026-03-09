@@ -25,10 +25,27 @@ def _get_mcp_server():
     return _mcp_server
 
 
-MODEL = os.getenv(
-    "ANTHROPIC_MODEL",
-    os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL", "stepfun/step-3.5-flash:free"),
-)
+MODEL = os.getenv("ANTHROPIC_MODEL", "openrouter/free")
+ALLOWED_TOOLS = [
+    "mcp__odata__list_configs",
+    "mcp__odata__list_entities",
+    "mcp__odata__describe_entity",
+    "mcp__odata__query_entity",
+    "mcp__odata__get_by_key",
+]
+DISALLOWED_TOOLS = [
+    "Agent",
+    "Task",
+    "TaskOutput",
+    "Bash",
+    "WebSearch",
+    "Glob",
+    "Grep",
+    "LS",
+    "Read",
+    "Edit",
+    "Write",
+]
 
 
 def _system_prompt(config_name: str) -> str:
@@ -94,7 +111,8 @@ def _system_prompt(config_name: str) -> str:
 async def _run(question: str, config_name: str) -> dict:
     options = ClaudeAgentOptions(
         system_prompt=_system_prompt(config_name),
-        allowed_tools=[],
+        allowed_tools=ALLOWED_TOOLS,
+        disallowed_tools=DISALLOWED_TOOLS,
         mcp_servers={"odata": _get_mcp_server()},
         permission_mode="bypassPermissions",
         max_turns=15,
@@ -149,7 +167,8 @@ def stream_agent_events(question: str, config_name: str, timeout: int = 120, can
         final_emitted = False
         options = ClaudeAgentOptions(
             system_prompt=_system_prompt(config_name),
-            allowed_tools=[],
+            allowed_tools=ALLOWED_TOOLS,
+            disallowed_tools=DISALLOWED_TOOLS,
             mcp_servers={"odata": _get_mcp_server()},
             permission_mode="bypassPermissions",
             max_turns=15,
