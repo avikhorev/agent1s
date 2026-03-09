@@ -28,3 +28,5 @@ def test_chat_ui_has_cancel_and_free_text_input():
     assert "chat_input(" not in app_text
     assert "st.session_state[draft_key] = q" in app_text
     assert 'st.button("➕ Новый чат", width="stretch", disabled=operation_running)' in app_text
+    assert 'with st.expander(f"🧠 Ход рассуждений: {len(op[\'thinking_chunks\'])}", expanded=False):' in app_text
+    assert 'with st.expander(f"🔧 Запросов к API: {len(op[\'tool_calls\'])}", expanded=False):' in app_text

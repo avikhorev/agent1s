@@ -152,13 +152,20 @@ def _finalize_operation(chat_id: str):
 
     full_text = "".join(op["final_chunks"]).strip()
     if not full_text:
-        full_text = "".join(op["thinking_chunks"]).strip() or "Нет ответа."
+        thinking_text = "".join(op["thinking_chunks"]).strip()
+        if thinking_text:
+            full_text = f"{thinking_text}\n\n⏱ Агент завершил без финального блока. Показан промежуточный результат."
+        elif op["tool_calls"]:
+            full_text = "⏱ Агент не вернул итоговый ответ. Запросы к данным выполнены, смотрите детали в блоке инструментов."
+        else:
+            full_text = "Нет ответа."
 
     st.session_state.chats[chat_id]["messages"].append(
         {
             "role": "assistant",
             "content": full_text,
             "thinking": "".join(op["thinking_chunks"]),
+            "thinking_count": len(op["thinking_chunks"]),
             "tool_calls": op["tool_calls"],
         }
     )
@@ -179,6 +186,7 @@ def _cancel_operation(chat_id: str):
             "role": "assistant",
             "content": full_text,
             "thinking": "".join(op["thinking_chunks"]),
+            "thinking_count": len(op["thinking_chunks"]),
             "tool_calls": op["tool_calls"],
         }
     )
@@ -277,7 +285,8 @@ def chat_page():
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             if msg.get("thinking"):
-                with st.expander("🧠 Ход рассуждений", expanded=False):
+                thinking_count = msg.get("thinking_count", 1)
+                with st.expander(f"🧠 Ход рассуждений: {thinking_count}", expanded=False):
                     st.markdown(msg["thinking"])
             # Show tool calls in expander
             if msg.get("tool_calls"):
@@ -292,10 +301,10 @@ def chat_page():
         with st.chat_message("assistant"):
             st.markdown("⏳ Агент анализирует данные...")
             if op["thinking_chunks"]:
-                with st.expander("🧠 Ход рассуждений", expanded=True):
+                with st.expander(f"🧠 Ход рассуждений: {len(op['thinking_chunks'])}", expanded=False):
                     st.markdown("".join(op["thinking_chunks"]))
             if op["tool_calls"]:
-                with st.expander(f"🔧 Запросов к API: {len(op['tool_calls'])}", expanded=True):
+                with st.expander(f"🔧 Запросов к API: {len(op['tool_calls'])}", expanded=False):
                     for tc in op["tool_calls"]:
                         st.code(f"{tc['tool']}({tc['args']})", language="python")
             if st.button("⛔ Отменить", key=f"cancel_{chat_id}", type="secondary"):
@@ -306,6 +315,18 @@ def chat_page():
         _finalize_operation(chat_id)
         st.rerun()
 
+    with st.form(key=f"composer_{chat_id}", clear_on_submit=False):
+        st.text_area("Сообщение", key=draft_key, height=100, disabled=running)
+        submitted = st.form_submit_button("▶ Отправить", type="primary", disabled=running, width="stretch")
+    if submitted:
+        prompt = st.session_state[draft_key].strip()
+        if prompt:
+            st.session_state[clear_draft_key] = True
+            _start_operation(chat_id, prompt)
+            st.rerun()
+        else:
+            st.warning("Введите вопрос перед отправкой.")
+
     st.markdown("### С чего начать?")
     cols = st.columns(2)
     for i, q in enumerate(EXAMPLE_QUESTIONS):
@@ -313,14 +334,6 @@ def chat_page():
             if st.button(q, key=f"example_{chat_id}_{i}", width="stretch", disabled=running):
                 st.session_state[draft_key] = q
                 st.rerun()
-
-    st.text_area("Сообщение", key=draft_key, height=100, disabled=running)
-    send_disabled = running or not st.session_state[draft_key].strip()
-    if st.button("▶ Отправить", width="stretch", type="primary", disabled=send_disabled):
-        prompt = st.session_state[draft_key].strip()
-        st.session_state[clear_draft_key] = True
-        _start_operation(chat_id, prompt)
-        st.rerun()
     if running:
         time.sleep(0.5)
         st.rerun()
