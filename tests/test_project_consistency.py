@@ -20,3 +20,11 @@ def test_ui_file_has_no_deprecated_use_container_width():
     assert "use_container_width=" not in app_text
     assert 'label=""' not in app_text
 
+
+def test_chat_ui_has_cancel_and_free_text_input():
+    app_text = Path("app.py").read_text(encoding="utf-8")
+    assert "⛔ Отменить" in app_text
+    assert 'st.text_area("Сообщение"' in app_text
+    assert "chat_input(" not in app_text
+    assert "st.session_state[draft_key] = q" in app_text
+    assert 'st.button("➕ Новый чат", width="stretch", disabled=operation_running)' in app_text

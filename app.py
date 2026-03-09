@@ -1,5 +1,7 @@
 """1C OData AI Agent — Streamlit chat interface."""
 import os
+import queue
+import threading
 import time
 import uuid
 
@@ -39,7 +41,7 @@ def init_state():
         "config": "ut",
         "chats": {},          # {chat_id: {"title": str, "messages": [{"role", "content", "tool_calls"}]}}
         "active_chat": None,
-        "thinking": False,
+        "operations": {},     # {chat_id: operation_state}
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -68,8 +70,124 @@ def login_page():
                     st.error("Неверный логин или пароль")
 
 
+def _get_draft_key(chat_id: str) -> str:
+    return f"chat_draft_{chat_id}"
+
+
+def _is_any_operation_running() -> bool:
+    for op in st.session_state.operations.values():
+        if op.get("running"):
+            return True
+    return False
+
+
+def _is_operation_running_for_chat(chat_id: str) -> bool:
+    op = st.session_state.operations.get(chat_id)
+    return bool(op and op.get("running"))
+
+
+def _start_operation(chat_id: str, question: str):
+    from agent import stream_agent_events
+
+    chat = st.session_state.chats[chat_id]
+    config_name = st.session_state.config
+    chat["messages"].append({"role": "user", "content": question})
+    if len(chat["messages"]) == 1:
+        title = question[:50] + ("…" if len(question) > 50 else "")
+        chat["title"] = title
+
+    event_queue: queue.Queue = queue.Queue()
+    cancel_event = threading.Event()
+
+    operation = {
+        "running": True,
+        "queue": event_queue,
+        "cancel_event": cancel_event,
+        "thinking_chunks": [],
+        "tool_calls": [],
+        "final_chunks": [],
+    }
+    st.session_state.operations[chat_id] = operation
+
+    def _worker():
+        try:
+            for event in stream_agent_events(
+                question,
+                config_name,
+                timeout=120,
+                cancel_event=cancel_event,
+            ):
+                event_queue.put(event)
+        finally:
+            event_queue.put({"type": "done"})
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def _drain_operation_events(chat_id: str):
+    op = st.session_state.operations.get(chat_id)
+    if not op or not op.get("running"):
+        return
+
+    while True:
+        try:
+            event = op["queue"].get_nowait()
+        except queue.Empty:
+            break
+
+        if event["type"] == "thinking":
+            op["thinking_chunks"].append(event["text"])
+        elif event["type"] == "tool_call":
+            op["tool_calls"].append({"tool": event["tool"], "args": event["args"]})
+        elif event["type"] == "final":
+            op["final_chunks"].append(event["text"])
+        elif event["type"] == "done":
+            op["running"] = False
+
+
+def _finalize_operation(chat_id: str):
+    op = st.session_state.operations.get(chat_id)
+    if not op or op.get("running"):
+        return
+
+    full_text = "".join(op["final_chunks"]).strip()
+    if not full_text:
+        full_text = "".join(op["thinking_chunks"]).strip() or "Нет ответа."
+
+    st.session_state.chats[chat_id]["messages"].append(
+        {
+            "role": "assistant",
+            "content": full_text,
+            "thinking": "".join(op["thinking_chunks"]),
+            "tool_calls": op["tool_calls"],
+        }
+    )
+    del st.session_state.operations[chat_id]
+
+
+def _cancel_operation(chat_id: str):
+    op = st.session_state.operations.get(chat_id)
+    if not op or not op.get("running"):
+        return
+    op["cancel_event"].set()
+    op["running"] = False
+    partial = "".join(op["final_chunks"]).strip() or "".join(op["thinking_chunks"]).strip()
+    cancel_text = "⛔ Операция отменена пользователем."
+    full_text = f"{partial}\n\n{cancel_text}".strip() if partial else cancel_text
+    st.session_state.chats[chat_id]["messages"].append(
+        {
+            "role": "assistant",
+            "content": full_text,
+            "thinking": "".join(op["thinking_chunks"]),
+            "tool_calls": op["tool_calls"],
+        }
+    )
+    del st.session_state.operations[chat_id]
+
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 def sidebar():
+    operation_running = _is_any_operation_running()
     with st.sidebar:
         st.title("🤖 OData Agent")
         st.caption(f"👤 {st.session_state.username}")
@@ -91,7 +209,7 @@ def sidebar():
         st.divider()
 
         # New chat
-        if st.button("➕ Новый чат", width="stretch"):
+        if st.button("➕ Новый чат", width="stretch", disabled=operation_running):
             chat_id = str(uuid.uuid4())[:8]
             st.session_state.chats[chat_id] = {"title": "Новый чат", "messages": []}
             st.session_state.active_chat = chat_id
@@ -104,7 +222,13 @@ def sidebar():
                 label = chat["title"]
                 is_active = chat_id == st.session_state.active_chat
                 btn_type = "primary" if is_active else "secondary"
-                if st.button(label, key=f"chat_{chat_id}", width="stretch", type=btn_type):
+                if st.button(
+                    label,
+                    key=f"chat_{chat_id}",
+                    width="stretch",
+                    type=btn_type,
+                    disabled=operation_running and not is_active,
+                ):
                     st.session_state.active_chat = chat_id
                     st.rerun()
 
@@ -129,6 +253,15 @@ def chat_page():
     chat_id = st.session_state.active_chat
     chat = st.session_state.chats[chat_id]
     config = st.session_state.config
+    draft_key = _get_draft_key(chat_id)
+    clear_draft_key = f"clear_{draft_key}"
+    if draft_key not in st.session_state:
+        st.session_state[draft_key] = ""
+    if clear_draft_key not in st.session_state:
+        st.session_state[clear_draft_key] = False
+    if st.session_state[clear_draft_key]:
+        st.session_state[draft_key] = ""
+        st.session_state[clear_draft_key] = False
 
     # Header
     col1, col2 = st.columns([3, 1])
@@ -137,67 +270,60 @@ def chat_page():
     with col2:
         st.caption(f"Конфигурация: **{CONFIG_OPTIONS[config]}**")
 
-    # Empty state with examples
-    if not chat["messages"]:
-        st.markdown("### С чего начать?")
-        cols = st.columns(2)
-        for i, q in enumerate(EXAMPLE_QUESTIONS):
-            with cols[i % 2]:
-                if st.button(q, key=f"example_{i}", width="stretch"):
-                    _send_message(chat_id, q)
-                    st.rerun()
-        return
+    _drain_operation_events(chat_id)
 
     # Render messages
     for msg in chat["messages"]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+            if msg.get("thinking"):
+                with st.expander("🧠 Ход рассуждений", expanded=False):
+                    st.markdown(msg["thinking"])
             # Show tool calls in expander
             if msg.get("tool_calls"):
                 with st.expander(f"🔧 Запросов к API: {len(msg['tool_calls'])}", expanded=False):
                     for tc in msg["tool_calls"]:
                         st.code(f"{tc['tool']}({tc['args']})", language="python")
 
-    # Thinking indicator
-    if st.session_state.thinking:
+    running = _is_operation_running_for_chat(chat_id)
+    op = st.session_state.operations.get(chat_id)
+
+    if running and op:
         with st.chat_message("assistant"):
-            with st.spinner("Агент анализирует данные..."):
-                time.sleep(0.1)
+            st.markdown("⏳ Агент анализирует данные...")
+            if op["thinking_chunks"]:
+                with st.expander("🧠 Ход рассуждений", expanded=True):
+                    st.markdown("".join(op["thinking_chunks"]))
+            if op["tool_calls"]:
+                with st.expander(f"🔧 Запросов к API: {len(op['tool_calls'])}", expanded=True):
+                    for tc in op["tool_calls"]:
+                        st.code(f"{tc['tool']}({tc['args']})", language="python")
+            if st.button("⛔ Отменить", key=f"cancel_{chat_id}", type="secondary"):
+                _cancel_operation(chat_id)
+                st.rerun()
+
+    if not running and op:
+        _finalize_operation(chat_id)
         st.rerun()
 
-    # Input
-    if prompt := st.chat_input("Задайте вопрос о ваших данных...", disabled=st.session_state.thinking):
-        _send_message(chat_id, prompt)
+    st.markdown("### С чего начать?")
+    cols = st.columns(2)
+    for i, q in enumerate(EXAMPLE_QUESTIONS):
+        with cols[i % 2]:
+            if st.button(q, key=f"example_{chat_id}_{i}", width="stretch", disabled=running):
+                st.session_state[draft_key] = q
+                st.rerun()
+
+    st.text_area("Сообщение", key=draft_key, height=100, disabled=running)
+    send_disabled = running or not st.session_state[draft_key].strip()
+    if st.button("▶ Отправить", width="stretch", type="primary", disabled=send_disabled):
+        prompt = st.session_state[draft_key].strip()
+        st.session_state[clear_draft_key] = True
+        _start_operation(chat_id, prompt)
         st.rerun()
-
-
-def _send_message(chat_id: str, question: str):
-    from agent import stream_agent
-
-    chat = st.session_state.chats[chat_id]
-
-    # Add user message
-    chat["messages"].append({"role": "user", "content": question})
-
-    # Update chat title from first question
-    if len(chat["messages"]) == 1:
-        title = question[:50] + ("…" if len(question) > 50 else "")
-        chat["title"] = title
-
-    # Stream response directly into the chat bubble
-    tool_calls: list = []
-    with st.chat_message("assistant"):
-        full_text = st.write_stream(stream_agent(question, st.session_state.config, tool_calls))
-        if tool_calls:
-            with st.expander(f"🔧 Запросов к API: {len(tool_calls)}", expanded=False):
-                for tc in tool_calls:
-                    st.code(f"{tc['tool']}({tc['args']})", language="python")
-
-    chat["messages"].append({
-        "role": "assistant",
-        "content": full_text,
-        "tool_calls": tool_calls,
-    })
+    if running:
+        time.sleep(0.5)
+        st.rerun()
 
 
 # ── Analytics page ─────────────────────────────────────────────────────────────

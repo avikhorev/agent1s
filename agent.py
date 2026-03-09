@@ -119,11 +119,31 @@ async def _run(question: str, config_name: str) -> dict:
     return {"answer": answer, "tool_calls": tool_calls}
 
 
-def stream_agent(question: str, config_name: str, tool_calls_out: list, timeout: int = 120):
-    """Sync generator yielding text chunks as Claude responds. Populates tool_calls_out as side effect."""
+def stream_agent(question: str, config_name: str, tool_calls_out: list, timeout: int = 120, cancel_event=None):
+    """Legacy text stream wrapper. Also captures tool calls via side effect."""
+    seen_thinking = []
+    for event in stream_agent_events(question, config_name, timeout=timeout, cancel_event=cancel_event):
+        if event["type"] == "tool_call":
+            tool_calls_out.append({"tool": event["tool"], "args": event["args"]})
+        elif event["type"] == "thinking":
+            seen_thinking.append(event["text"])
+            yield event["text"]
+        elif event["type"] == "final":
+            text = event["text"]
+            thinking_prefix = "".join(seen_thinking)
+            if thinking_prefix and text.startswith(thinking_prefix):
+                text = text[len(thinking_prefix):]
+            if text:
+                yield text
+
+
+def stream_agent_events(question: str, config_name: str, timeout: int = 120, cancel_event=None):
+    """Sync generator yielding typed events: thinking/tool_call/final."""
     q: queue.Queue = queue.Queue()
+    thinking_chunks = []
 
     async def _stream():
+        final_emitted = False
         options = ClaudeAgentOptions(
             system_prompt=_system_prompt(config_name),
             allowed_tools=[],
@@ -135,15 +155,31 @@ def stream_agent(question: str, config_name: str, tool_calls_out: list, timeout:
         async with ClaudeSDKClient(options=options) as client:
             await client.query(question)
             async for message in client.receive_response():
+                if cancel_event is not None and cancel_event.is_set():
+                    break
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
+                        if cancel_event is not None and cancel_event.is_set():
+                            break
                         if isinstance(block, TextBlock) and block.text:
-                            q.put(("text", block.text))
+                            thinking_chunks.append(block.text)
+                            q.put({"type": "thinking", "text": block.text})
                         elif isinstance(block, ToolUseBlock):
                             name = block.name.replace("mcp__odata__", "")
-                            tool_calls_out.append({"tool": name, "args": block.input})
+                            q.put({"type": "tool_call", "tool": name, "args": block.input})
                 elif isinstance(message, ResultMessage) and message.result:
-                    q.put(("text", message.result))
+                    final_emitted = True
+                    q.put({"type": "final", "text": message.result})
+
+        if cancel_event is not None and cancel_event.is_set():
+            partial = "".join(thinking_chunks).strip()
+            cancel_text = "⛔ Операция отменена пользователем."
+            if partial:
+                q.put({"type": "final", "text": f"{partial}\n\n{cancel_text}"})
+            else:
+                q.put({"type": "final", "text": cancel_text})
+        elif not final_emitted and thinking_chunks:
+            q.put({"type": "final", "text": "".join(thinking_chunks)})
 
     def _thread():
         async def _with_timeout():
@@ -151,19 +187,23 @@ def stream_agent(question: str, config_name: str, tool_calls_out: list, timeout:
         try:
             asyncio.run(_with_timeout())
         except asyncio.TimeoutError:
-            q.put(("text", f"\n⏱ Агент не уложился в {timeout} секунд."))
+            partial = "".join(thinking_chunks).strip()
+            if partial:
+                q.put({"type": "final", "text": f"{partial}\n\n⏱ Агент не уложился в {timeout} секунд."})
+            else:
+                q.put({"type": "final", "text": f"\n⏱ Агент не уложился в {timeout} секунд."})
         except Exception as e:
-            q.put(("text", f"\n❌ Ошибка: {e}"))
+            q.put({"type": "final", "text": f"\n❌ Ошибка: {e}"})
         finally:
-            q.put(("done", None))
+            q.put({"type": "done"})
 
     threading.Thread(target=_thread, daemon=True).start()
 
     while True:
-        kind, value = q.get(timeout=timeout + 10)
-        if kind == "done":
+        event = q.get(timeout=timeout + 10)
+        if event["type"] == "done":
             break
-        yield value
+        yield event
 
 
 def run_agent(question: str, config_name: str, timeout: int = 120) -> dict:
