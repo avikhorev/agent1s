@@ -152,10 +152,17 @@ def _render_history_prompt(question: str, history: list[dict] | None = None) -> 
     if not history:
         return question
 
-    lines = [
-        "Ниже история диалога. Используй ее как контекст и ответь на последнее сообщение пользователя.",
-        "",
-    ]
+    def _history_max_chars() -> int:
+        raw = (os.getenv("AGENT_HISTORY_MAX_CHARS") or "").strip()
+        if not raw:
+            return 12000
+        try:
+            value = int(raw)
+            return value if value > 0 else 12000
+        except ValueError:
+            return 12000
+
+    rendered_msgs = []
     for msg in history:
         role = str(msg.get("role", "")).strip().lower()
         if role not in {"user", "assistant"}:
@@ -164,7 +171,27 @@ def _render_history_prompt(question: str, history: list[dict] | None = None) -> 
         if not content:
             continue
         who = "Пользователь" if role == "user" else "Ассистент"
-        lines.append(f"{who}: {content}")
+        rendered_msgs.append(f"{who}: {content}")
+
+    if not any(line.startswith("Пользователь:") for line in rendered_msgs):
+        return question
+
+    max_chars = _history_max_chars()
+    kept_reversed = []
+    total = 0
+    for line in reversed(rendered_msgs):
+        line_len = len(line) + 1
+        if kept_reversed and total + line_len > max_chars:
+            break
+        kept_reversed.append(line)
+        total += line_len
+
+    kept = list(reversed(kept_reversed))
+    lines = [
+        "Ниже история диалога. Используй ее как контекст и ответь на последнее сообщение пользователя.",
+        "",
+    ]
+    lines.extend(kept)
 
     if not any(line.startswith("Пользователь:") for line in lines):
         return question

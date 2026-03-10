@@ -21,7 +21,7 @@ docker compose up --build
 
 Через ~2 минуты (пока сидируется база) откройте **http://localhost:8501**
 
-Логин: `admin` / `Secret123!`
+Логин берётся из `.env`: `ADMIN_USER` / `ADMIN_PASSWORD`.
 
 ## Что умеет агент
 
@@ -68,9 +68,9 @@ Streamlit app (port 8501)
 | `ANTHROPIC_BASE_URL` | `https://openrouter.ai/api` | URL провайдера для SDK (оставьте пустым для прямого Anthropic) |
 | `ANTHROPIC_AUTH_TOKEN` | `${OPENROUTER_API_KEY}` | Токен авторизации для SDK при OpenRouter |
 | `ANTHROPIC_API_KEY` | `""` | Ключ Anthropic API (при прямом Anthropic) |
-| `ANTHROPIC_MODEL` | `openrouter/free` | Модель для агента |
-| `ADMIN_USER` | `admin` | Логин |
-| `ADMIN_PASSWORD` | `Secret123!` | Пароль |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Модель для агента |
+| `ADMIN_USER` | — | Логин (обязательно задать) |
+| `ADMIN_PASSWORD` | — | Пароль (обязательно задать) |
 | `ODATA_MOCK_URL` | `http://odata-mock:8080` | URL OData сервера |
 | `CHAT_DB_DSN` | `postgresql://odata:odata_secret@odata-postgres:5432/odata_1c` | PostgreSQL для хранения истории чатов |
 

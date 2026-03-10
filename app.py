@@ -1,4 +1,5 @@
 """1C OData AI Agent — Streamlit chat interface."""
+import logging
 import os
 import queue
 import re
@@ -8,8 +9,10 @@ import uuid
 
 import streamlit as st
 
-ADMIN_USER = os.getenv("ADMIN_USER", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Secret123!")
+logger = logging.getLogger(__name__)
+
+ADMIN_USER = os.getenv("ADMIN_USER", "").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 
 CONFIG_OPTIONS = {
     "ut": "📦 Управление торговлей 11",
@@ -91,6 +94,9 @@ def login_page():
             pwd = st.text_input("Пароль", type="password")
             submitted = st.form_submit_button("Войти", width="stretch", type="primary")
             if submitted:
+                if not ADMIN_USER or not ADMIN_PASSWORD:
+                    st.error("Сервер не настроен: задайте ADMIN_USER и ADMIN_PASSWORD.")
+                    return
                 if user == ADMIN_USER and pwd == ADMIN_PASSWORD:
                     st.session_state.authenticated = True
                     st.session_state.username = user
@@ -218,6 +224,7 @@ def _restore_user_chats(username: str, config_name: str):
             st.session_state.active_chat = None
     except Exception:
         # DB storage is optional outside docker/local DB runs.
+        logger.exception("Failed to restore chats from DB store")
         st.session_state.chats = {}
         st.session_state.active_chat = None
 
@@ -238,7 +245,7 @@ def _persist_chat(chat_id: str):
             chat["messages"],
         )
     except Exception:
-        pass
+        logger.exception("Failed to persist chat to DB store")
 
 
 def _start_operation(chat_id: str, question: str):

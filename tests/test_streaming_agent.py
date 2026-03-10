@@ -429,3 +429,17 @@ def test_stream_agent_events_sends_full_history_to_model(monkeypatch):
     assert "старый ответ" in sent
     assert "новый вопрос" in sent
 
+
+def test_render_history_prompt_trims_old_messages_when_too_large(monkeypatch):
+    import agent
+
+    monkeypatch.setenv("AGENT_HISTORY_MAX_CHARS", "120")
+    history = [
+        {"role": "user", "content": "очень старый вопрос " + ("x" * 80)},
+        {"role": "assistant", "content": "старый ответ " + ("y" * 80)},
+        {"role": "user", "content": "последний важный вопрос"},
+    ]
+
+    rendered = agent._render_history_prompt("последний важный вопрос", history)
+    assert "последний важный вопрос" in rendered
+    assert "очень старый вопрос" not in rendered
