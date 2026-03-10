@@ -18,16 +18,28 @@ CONFIG_OPTIONS = {
 
 _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-EXAMPLE_QUESTIONS = [
-    "Что происходит с продажами? Покажи динамику по месяцам за 2024 год",
-    "Какие товары чаще всего возвращают?",
-    "Покажи топ-5 клиентов по выручке",
-    "Построй динамику по продажам для худшего магазина",
-    "Где у меня есть места неэффективности?",
-    "Какова маржинальность по категориям товаров?",
-    "Что происходит с закупками?",
-    "Покажи сезонность продаж",
-]
+EXAMPLE_QUESTIONS_BY_CONFIG = {
+    "ut": [
+        "Что происходит с продажами за последние 12 месяцев?",
+        "Какие товары чаще всего возвращают?",
+        "Покажи топ-5 клиентов по выручке",
+        "Какие товары дают максимум выручки?",
+        "Где у меня есть места неэффективности?",
+        "Какова маржинальность по категориям товаров?",
+        "Что происходит с закупками?",
+        "Покажи сезонность продаж",
+    ],
+    "bp": [
+        "Покажи топ-5 контрагентов по выручке",
+        "Какая динамика оплат от покупателей по месяцам?",
+        "Какая дебиторская задолженность на сегодня?",
+        "Какая кредиторская задолженность на сегодня?",
+        "Какие подразделения дают максимум выручки?",
+        "Какие контрагенты платят с наибольшей задержкой?",
+        "Сравни реализации и поступления денежных средств",
+        "Какие документы реализации самые крупные?",
+    ],
+}
 
 st.set_page_config(
     page_title="1C OData Agent",
@@ -82,6 +94,7 @@ def login_page():
                 if user == ADMIN_USER and pwd == ADMIN_PASSWORD:
                     st.session_state.authenticated = True
                     st.session_state.username = user
+                    _restore_user_chats(user, st.session_state.config)
                     st.rerun()
                 else:
                     st.error("Неверный логин или пароль")
@@ -191,6 +204,43 @@ def _is_operation_running_for_chat(chat_id: str) -> bool:
     return bool(op and op.get("running"))
 
 
+def _restore_user_chats(username: str, config_name: str):
+    try:
+        from services.chat_store import init_store, load_chats
+
+        init_store()
+        chats = load_chats(username, config_name)
+        if chats:
+            st.session_state.chats = chats
+            st.session_state.active_chat = list(chats.keys())[-1]
+        else:
+            st.session_state.chats = {}
+            st.session_state.active_chat = None
+    except Exception:
+        # DB storage is optional outside docker/local DB runs.
+        st.session_state.chats = {}
+        st.session_state.active_chat = None
+
+
+def _persist_chat(chat_id: str):
+    if chat_id not in st.session_state.chats:
+        return
+    try:
+        from services.chat_store import init_store, save_chat
+
+        init_store()
+        chat = st.session_state.chats[chat_id]
+        save_chat(
+            st.session_state.username,
+            st.session_state.config,
+            chat_id,
+            chat["title"],
+            chat["messages"],
+        )
+    except Exception:
+        pass
+
+
 def _start_operation(chat_id: str, question: str):
     from agent import stream_agent_events
 
@@ -200,6 +250,7 @@ def _start_operation(chat_id: str, question: str):
     if len(chat["messages"]) == 1:
         title = question[:50] + ("…" if len(question) > 50 else "")
         chat["title"] = title
+    _persist_chat(chat_id)
 
     event_queue: queue.Queue = queue.Queue()
     cancel_event = threading.Event()
@@ -222,6 +273,7 @@ def _start_operation(chat_id: str, question: str):
                 config_name,
                 timeout=120,
                 cancel_event=cancel_event,
+                history=chat["messages"],
             ):
                 event_queue.put(event)
         finally:
@@ -296,6 +348,7 @@ def _finalize_operation(chat_id: str):
             "tool_calls": op["tool_calls"],
         }
     )
+    _persist_chat(chat_id)
     del st.session_state.operations[chat_id]
 
 
@@ -317,6 +370,7 @@ def _cancel_operation(chat_id: str):
             "tool_calls": op["tool_calls"],
         }
     )
+    _persist_chat(chat_id)
     del st.session_state.operations[chat_id]
 
 
@@ -337,9 +391,12 @@ def sidebar():
             format_func=lambda k: CONFIG_OPTIONS[k],
             index=list(CONFIG_OPTIONS.keys()).index(st.session_state.config),
             label_visibility="collapsed",
+            disabled=operation_running,
         )
         if selected != st.session_state.config:
             st.session_state.config = selected
+            if st.session_state.authenticated:
+                _restore_user_chats(st.session_state.username, selected)
 
         st.divider()
 
@@ -348,6 +405,7 @@ def sidebar():
             chat_id = str(uuid.uuid4())[:8]
             st.session_state.chats[chat_id] = {"title": "Новый чат", "messages": []}
             st.session_state.active_chat = chat_id
+            _persist_chat(chat_id)
             st.rerun()
 
         # Chat history
@@ -384,6 +442,7 @@ def chat_page():
             chat_id = str(uuid.uuid4())[:8]
             st.session_state.chats[chat_id] = {"title": "Новый чат", "messages": []}
             st.session_state.active_chat = chat_id
+            _persist_chat(chat_id)
 
     chat_id = st.session_state.active_chat
     chat = st.session_state.chats[chat_id]
@@ -476,7 +535,8 @@ def chat_page():
 
     st.markdown("### С чего начать?")
     cols = st.columns(2)
-    for i, q in enumerate(EXAMPLE_QUESTIONS):
+    questions = EXAMPLE_QUESTIONS_BY_CONFIG.get(config, EXAMPLE_QUESTIONS_BY_CONFIG["ut"])
+    for i, q in enumerate(questions):
         with cols[i % 2]:
             if st.button(q, key=f"example_{chat_id}_{i}", width="stretch", disabled=running):
                 st.session_state[prefill_draft_key] = q
@@ -487,23 +547,6 @@ def chat_page():
 
 
 # ── Analytics page ─────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
-def _load_sales(config: str) -> "pd.DataFrame":
-    import pandas as pd
-    from odata.client import fetch_entity
-    try:
-        payload = fetch_entity(config, "AccumulationRegister_Продажи", select="Period,Сумма", top=1000)
-        records = payload.get("value", [])
-    except Exception:
-        return pd.DataFrame(columns=["Period", "Сумма"])
-    if not records:
-        return pd.DataFrame(columns=["Period", "Сумма"])
-    df = pd.DataFrame(records)
-    df["Period"] = pd.to_datetime(df["Period"], errors="coerce")
-    df["Сумма"] = pd.to_numeric(df["Сумма"], errors="coerce").fillna(0)
-    return df
-
-
 @st.cache_data(ttl=300)
 def _load_sales_by_product(config: str) -> "pd.DataFrame":
     import pandas as pd
@@ -553,29 +596,10 @@ def _load_returns(config: str) -> "pd.DataFrame":
 
 
 def analytics_page():
-    import pandas as pd
     config = st.session_state.config
 
     st.title(f"📈 Аналитика — {CONFIG_OPTIONS[config]}")
     st.caption("Данные кешируются на 5 минут. Переключите конфигурацию в боковой панели.")
-
-    # ── Продажи по месяцам ────────────────────────────────────────────────────
-    st.subheader("Продажи по месяцам")
-    with st.spinner("Загрузка..."):
-        df_sales = _load_sales(config)
-    if df_sales.empty:
-        st.info("Нет данных о продажах.")
-    else:
-        monthly = (
-            df_sales.dropna(subset=["Period"])
-            .assign(month=lambda d: d["Period"].dt.to_period("M").astype(str))
-            .groupby("month")["Сумма"].sum()
-            .reset_index()
-            .set_index("month")
-        )
-        st.line_chart(monthly)
-        with st.expander("Данные"):
-            st.dataframe(monthly.reset_index(), width="stretch")
 
     # ── Топ товаров и склады — pie charts ─────────────────────────────────────
     with st.spinner("Загрузка..."):
@@ -603,7 +627,7 @@ def analytics_page():
                          hole=0.35)
             fig.update_traces(textposition="inside", textinfo="percent+label")
             fig.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             with st.expander("Данные"):
                 st.dataframe(top8, width="stretch")
 
@@ -618,7 +642,7 @@ def analytics_page():
                           hole=0.35)
             fig2.update_traces(textposition="inside", textinfo="percent+label")
             fig2.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width="stretch")
             with st.expander("Данные"):
                 st.dataframe(by_wh, width="stretch")
 

@@ -35,3 +35,16 @@ def test_chat_ui_has_cancel_and_free_text_input():
     assert 'st.button("➕ Новый чат", width="stretch", disabled=operation_running)' in app_text
     assert 'with st.expander(f"🧠 Ход рассуждений: {len(op[\'thinking_chunks\'])}", expanded=False):' in app_text
     assert 'with st.expander(f"🔧 Запросов к API: {len(op[\'tool_calls\'])}", expanded=False):' in app_text
+
+
+def test_analytics_has_no_monthly_sales_chart():
+    app_text = Path("app.py").read_text(encoding="utf-8")
+    assert "Продажи по месяцам" not in app_text
+
+
+def test_example_buttons_are_config_specific():
+    app_text = Path("app.py").read_text(encoding="utf-8")
+    assert "EXAMPLE_QUESTIONS_BY_CONFIG" in app_text
+    assert '"ut": [' in app_text or "'ut': [" in app_text
+    assert '"bp": [' in app_text or "'bp': [" in app_text
+    assert "for i, q in enumerate(questions):" in app_text

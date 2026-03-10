@@ -373,3 +373,59 @@ def test_stream_agent_events_uses_direct_returns_fast_path(monkeypatch):
     assert events[2]["type"] == "tool_call"
     assert events[2]["tool"] == "top_returned_products"
     assert events[3]["type"] == "final"
+
+
+def test_stream_agent_events_sends_full_history_to_model(monkeypatch):
+    import agent
+
+    captured = {}
+
+    class FakeTextBlock:
+        def __init__(self, text: str):
+            self.text = text
+
+    class FakeAssistantMessage:
+        def __init__(self, content):
+            self.content = content
+
+    class FakeResultMessage:
+        def __init__(self, result: str):
+            self.result = result
+
+    class FakeClient:
+        def __init__(self, options):
+            self.options = options
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def query(self, question):
+            captured["query"] = question
+
+        async def receive_response(self):
+            yield FakeAssistantMessage([FakeTextBlock("ok")])
+            yield FakeResultMessage("done")
+
+    monkeypatch.setattr(agent, "AssistantMessage", FakeAssistantMessage)
+    monkeypatch.setattr(agent, "ResultMessage", FakeResultMessage)
+    monkeypatch.setattr(agent, "TextBlock", FakeTextBlock)
+    monkeypatch.setattr(agent, "ToolUseBlock", type("UnusedToolUseBlock", (), {}))
+    monkeypatch.setattr(agent, "ClaudeSDKClient", FakeClient)
+    monkeypatch.setattr(agent, "ClaudeAgentOptions", lambda **kwargs: types.SimpleNamespace(**kwargs))
+    monkeypatch.setattr(agent, "_ensure_warm_status_thread", lambda: None)
+
+    history = [
+        {"role": "user", "content": "старый вопрос"},
+        {"role": "assistant", "content": "старый ответ"},
+        {"role": "user", "content": "новый вопрос"},
+    ]
+    list(agent.stream_agent_events("новый вопрос", "ut", timeout=2, history=history))
+
+    sent = captured["query"]
+    assert "старый вопрос" in sent
+    assert "старый ответ" in sent
+    assert "новый вопрос" in sent
+

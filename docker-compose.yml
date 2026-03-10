@@ -7,6 +7,7 @@ services:
       - claude_auth:/home/appuser/.claude
     environment:
       ODATA_MOCK_URL: ${ODATA_MOCK_URL:-http://odata-mock:8080}
+      CHAT_DB_DSN: ${CHAT_DB_DSN:-postgresql://odata:odata_secret@odata-postgres:5432/odata_1c}
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Secret123!}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

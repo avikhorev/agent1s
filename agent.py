@@ -148,6 +148,29 @@ def _extract_limit(question: str, default: int = 10) -> int:
     return default
 
 
+def _render_history_prompt(question: str, history: list[dict] | None = None) -> str:
+    if not history:
+        return question
+
+    lines = [
+        "Ниже история диалога. Используй ее как контекст и ответь на последнее сообщение пользователя.",
+        "",
+    ]
+    for msg in history:
+        role = str(msg.get("role", "")).strip().lower()
+        if role not in {"user", "assistant"}:
+            continue
+        content = str(msg.get("content", "")).strip()
+        if not content:
+            continue
+        who = "Пользователь" if role == "user" else "Ассистент"
+        lines.append(f"{who}: {content}")
+
+    if not any(line.startswith("Пользователь:") for line in lines):
+        return question
+    return "\n".join(lines)
+
+
 def _try_direct_answer(question: str, config_name: str) -> dict | None:
     cfg = _normalize_config(config_name)
     if cfg != "ut":
@@ -217,6 +240,7 @@ async def _stream_with_model(
     config_name: str,
     model_name: str,
     emit,
+    history: list[dict] | None = None,
     cancel_event=None,
 ) -> tuple[bool, list[str]]:
     """Stream a single model attempt. Returns (final_emitted, thinking_chunks)."""
@@ -227,7 +251,7 @@ async def _stream_with_model(
     timeout = FIRST_TOKEN_TIMEOUT_SEC if FIRST_TOKEN_TIMEOUT_SEC > 0 else None
 
     async with ClaudeSDKClient(options=options) as client:
-        await client.query(question)
+        await client.query(_render_history_prompt(question, history))
         stream = client.receive_response().__aiter__()
         while True:
             if cancel_event is not None and cancel_event.is_set():
@@ -297,10 +321,23 @@ async def _run(question: str, config_name: str) -> dict:
     return {"answer": answer, "tool_calls": tool_calls}
 
 
-def stream_agent(question: str, config_name: str, tool_calls_out: list, timeout: int = 120, cancel_event=None):
+def stream_agent(
+    question: str,
+    config_name: str,
+    tool_calls_out: list,
+    timeout: int = 120,
+    cancel_event=None,
+    history: list[dict] | None = None,
+):
     """Legacy text stream wrapper. Also captures tool calls via side effect."""
     seen_thinking = []
-    for event in stream_agent_events(question, config_name, timeout=timeout, cancel_event=cancel_event):
+    for event in stream_agent_events(
+        question,
+        config_name,
+        timeout=timeout,
+        cancel_event=cancel_event,
+        history=history,
+    ):
         if event["type"] == "tool_call":
             tool_calls_out.append({"tool": event["tool"], "args": event["args"]})
         elif event["type"] == "thinking":
@@ -315,7 +352,13 @@ def stream_agent(question: str, config_name: str, tool_calls_out: list, timeout:
                 yield text
 
 
-def stream_agent_events(question: str, config_name: str, timeout: int = 120, cancel_event=None):
+def stream_agent_events(
+    question: str,
+    config_name: str,
+    timeout: int = 120,
+    cancel_event=None,
+    history: list[dict] | None = None,
+):
     """Sync generator yielding typed events: thinking/tool_call/final."""
     q: queue.Queue = queue.Queue()
     thinking_chunks = []
@@ -350,6 +393,7 @@ def stream_agent_events(question: str, config_name: str, timeout: int = 120, can
                     config_name=config_name,
                     model_name=model_name,
                     emit=_emit,
+                    history=history,
                     cancel_event=cancel_event,
                 )
                 if attempt_thinking:
